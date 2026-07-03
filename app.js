@@ -14,7 +14,9 @@
       beta: null,
       gamma: null,
       heading: null,
-      ready: false
+      ready: false,
+      delta: null,
+      deltaReady: false
     },
     raf3d: null,
     declination: Number(localStorage.getItem('declination') || '-7.7')
@@ -27,6 +29,7 @@
   var headingOutliers = 0;
   var flipDisagree = 0;
   var vis3d = { sun: false, moon: false };
+  var basisPrev = null;
   var fovY = 60 * Math.PI / 180;
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
@@ -151,9 +154,11 @@
     } else {
       els.compassStatus.textContent = '方位が取得できません';
     }
+    // 3D姿勢は生値を保持し、平滑化は基底ベクトル側(cameraBasis)で行う
     if (typeof ev.alpha === 'number') state.orientation.alpha = ev.alpha;
-    if (typeof ev.beta === 'number') state.orientation.beta = smoothValue(state.orientation.beta, ev.beta, .22);
-    if (typeof ev.gamma === 'number') state.orientation.gamma = smoothRoll(state.orientation.gamma, ev.gamma, .22);
+    if (typeof ev.beta === 'number') state.orientation.beta = ev.beta;
+    if (typeof ev.gamma === 'number') state.orientation.gamma = ev.gamma;
+    updateDelta(ev);
     if (state.mode === '3d') request3dRender();
   }
   function setMode(mode) {
@@ -302,6 +307,7 @@
   }
   function start3dLoop() {
     if (state.raf3d) return;
+    basisPrev = null; // 古い基底とのEMA混合を避ける
     request3dRender();
     state.raf3d = requestAnimationFrame(function tick() {
       render3d();
@@ -318,7 +324,7 @@
   }
   function render3d() {
     if (state.mode !== '3d') return;
-    if (!state.compassOn || !state.orientation.ready || state.orientation.beta === null || state.orientation.gamma === null) {
+    if (!state.compassOn || !state.orientation.deltaReady || state.orientation.alpha === null || state.orientation.beta === null || state.orientation.gamma === null) {
       els.sky3dStatus.style.display = 'block';
       els.sky3dStatus.textContent = window.DeviceOrientationEvent ? 'コンパス連動を許可してください' : 'この端末では3D姿勢を取得できません';
       hide3d(els.sun3d, els.sunGuide);
@@ -394,26 +400,68 @@
     }
     return sky3dCache[key];
   }
-  function cameraBasis(o) {
-    var heading = norm360(o.heading || state.heading);
-    var beta = clamp(o.beta === null ? 90 : o.beta, -90, 180);
-    var gamma = clamp(o.gamma === null ? 0 : o.gamma, -90, 90);
-    // beta は直立=90 / 画面下向き(背面が天頂)=180 なので、見上げ角は beta-90(逆にすると上下反転する)
-    var lookAlt = clamp(beta - 90, -85, 85) * Math.PI / 180;
-    var top = azAltVector(heading, 0);
-    var right = azAltVector(heading + 90, 0);
-    var zenith = { x: 0, y: 0, z: 1 };
-    var forward = normalize(add(scale(top, Math.cos(lookAlt)), scale(zenith, Math.sin(lookAlt))));
-    var up = normalize(add(scale(top, -Math.sin(lookAlt)), scale(zenith, Math.cos(lookAlt))));
-    var roll = -gamma * Math.PI / 180;
-    var rolledRight = normalize(add(scale(right, Math.cos(roll)), scale(up, Math.sin(roll))));
-    var rolledUp = normalize(add(scale(up, Math.cos(roll)), scale(right, -Math.sin(roll))));
-    var screen = screenAngle() * Math.PI / 180;
+  // W3C の回転行列 R = Rz(alpha)Rx(beta)Ry(gamma) から端末軸ベクトル(alpha基準系)を直接計算する。
+  // 合成行列はオイラー角の特異点(垂直付近)でも連続なため、振り上げや天頂狙いでも破綻しない。
+  // 地上系は ENU(x=東, y=北, z=天頂)、端末系は right=画面右 / up=端末上端 / forward=背面視線。
+  function deviceAxes(alpha, beta, gamma) {
+    var D = Math.PI / 180;
+    var a = alpha * D, b = beta * D, g = gamma * D;
+    var ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
     return {
-      forward: forward,
-      right: normalize(add(scale(rolledRight, Math.cos(screen)), scale(rolledUp, Math.sin(screen)))),
-      up: normalize(add(scale(rolledUp, Math.cos(screen)), scale(rolledRight, -Math.sin(screen))))
+      right: { x: ca * cg - sa * sb * sg, y: sa * cg + ca * sb * sg, z: -cb * sg },
+      up: { x: -sa * cb, y: ca * cb, z: sb },
+      forward: { x: -(ca * sg + sa * sb * cg), y: -(sa * sg - ca * sb * cg), z: -cb * cg }
     };
+  }
+  // alpha 原点(iOSでは不定)と真北のずれ δ: コンパス値と行列側で同じ量(端末上端の水平射影方位)を
+  // 計算して差分を取る。コンパスの180°反転は差分で自動的に相殺されるため反転補正が不要になる
+  function updateDelta(ev) {
+    var o = state.orientation;
+    if (o.alpha === null || o.beta === null || o.gamma === null) return;
+    if (typeof ev.webkitCompassHeading !== 'number') {
+      // alpha が北基準の環境(非iOS)は偏角合わせのみ
+      o.delta = state.declination;
+      o.deltaReady = true;
+      return;
+    }
+    var top = deviceAxes(o.alpha, o.beta, o.gamma).up;
+    var horiz = Math.sqrt(top.x * top.x + top.y * top.y);
+    if (horiz < .2) return; // 上端がほぼ鉛直(水平狙い付近)は射影もコンパスも縮退するため更新を凍結
+    var target = ev.webkitCompassHeading + state.declination - azimuthOf(top);
+    o.delta = o.deltaReady ? smoothAngle(o.delta, target, .22) : norm360(target);
+    o.deltaReady = true;
+  }
+  function azimuthOf(v) {
+    return norm360(Math.atan2(v.x, v.y) * 180 / Math.PI);
+  }
+  function rotAz(v, deg) {
+    var r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    return { x: v.x * c + v.y * s, y: v.y * c - v.x * s, z: v.z };
+  }
+  function cameraBasis(o) {
+    var axes = deviceAxes(o.alpha, o.beta, o.gamma);
+    var forward = rotAz(axes.forward, o.delta);
+    var right = rotAz(axes.right, o.delta);
+    var up = rotAz(axes.up, o.delta);
+    var screen = screenAngle() * Math.PI / 180;
+    if (screen) {
+      var cs = Math.cos(screen), sn = Math.sin(screen);
+      var r2 = add(scale(right, cs), scale(up, sn));
+      up = add(scale(up, cs), scale(right, -sn));
+      right = r2;
+    }
+    // 平滑化は角度でなく基底ベクトルのEMA+再直交化(角度の折り返し・特異点の問題が原理的に出ない)
+    if (basisPrev) {
+      forward = normalize(add(scale(basisPrev.forward, .75), scale(forward, .25)));
+      up = add(scale(basisPrev.up, .75), scale(up, .25));
+      up = normalize(add(up, scale(forward, -dot(up, forward))));
+      right = cross(forward, up);
+    }
+    basisPrev = { forward: forward, right: right, up: up };
+    return basisPrev;
+  }
+  function cross(a, b) {
+    return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
   }
   function hide3d(bodyEl, guideEl) {
     bodyEl.style.transform = 'translate3d(-999px,-999px,0)';
@@ -431,20 +479,6 @@
     var x = Math.cos(a) * (1 - rate) + Math.cos(b) * rate;
     var y = Math.sin(a) * (1 - rate) + Math.sin(b) * rate;
     return norm360(Math.atan2(y, x) * 180 / Math.PI);
-  }
-  function smoothValue(prev, next, rate) {
-    return prev === null || !isFinite(prev) ? next : prev * (1 - rate) + next * rate;
-  }
-  function smoothRoll(prev, next, rate) {
-    if (prev === null || !isFinite(prev)) return next;
-    // gamma は±90でオイラー表現が切り替わり +89⇄-89 と飛ぶため、周期180の最短差分で平滑化(線形EMAだと0経由で一瞬90°狂う)
-    var diff = (next - prev + 90) % 180;
-    if (diff < 0) diff += 180;
-    diff -= 90;
-    var out = prev + diff * rate;
-    if (out >= 90) out -= 180;
-    if (out < -90) out += 180;
-    return out;
   }
   function angleDiff(a, b) {
     return (a - b + 540) % 360 - 180;
@@ -488,7 +522,6 @@
     var len = Math.sqrt(dot(a, a)) || 1;
     return { x: a.x / len, y: a.y / len, z: a.z / len };
   }
-  function clamp(x, min, max) { return Math.max(min, Math.min(max, x)); }
   function norm360(deg) {
     deg = deg % 360;
     return deg < 0 ? deg + 360 : deg;
