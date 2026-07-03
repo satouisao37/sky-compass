@@ -347,14 +347,12 @@
     var screenDx = px - cx;
     var screenDy = py - cy;
     var visible = z > .05 && Math.sqrt(screenDx * screenDx + screenDy * screenDy) <= visibleRadius;
+    // 誘導方向: 前方は投影点への向き、背面でも視線直交面への横成分(x,-y)がそのまま曲がるべき向き(反転させると逆を指す)
     var dx = z > .05 ? screenDx : x;
     var dy = z > .05 ? screenDy : -y;
-    if (z <= .05) {
-      dx = -dx;
-      dy = -dy;
-    }
     if (Math.abs(dx) + Math.abs(dy) < .001) {
-      dx = Math.sin((pos.az - state.orientation.heading) * Math.PI / 180);
+      // ほぼ真後ろ: sin(方位差)は180°で0に縮退するため符号だけ使って左右に倒す
+      dx = Math.sin((pos.az - state.orientation.heading) * Math.PI / 180) >= 0 ? 1 : -1;
       dy = 0;
     }
     var len = Math.sqrt(dx * dx + dy * dy) || 1;
