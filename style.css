@@ -62,6 +62,8 @@ main { max-width: 620px; margin: 0 auto; }
 .sky-3d-status { position: absolute; left: 24px; right: 24px; bottom: 28px; padding: 8px 10px; border-radius: 8px; background: rgba(15, 21, 25, .82); color: var(--muted); font-size: 12px; text-align: center; pointer-events: none; }
 .compass-actions { display: flex; align-items: center; gap: 12px; justify-content: center; color: var(--muted); font-size: 12px; margin-top: -6px; }
 
+.app-version { text-align: center; color: var(--muted); font-size: 11px; margin: 14px 0 24px; }
+
 .cards { display: grid; grid-template-columns: 1fr; gap: 10px; margin: 16px 0; }
 .cards article, .time-panel, .settings { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .cards h2 { margin: 0 0 8px; font-size: 14px; color: var(--accent); }

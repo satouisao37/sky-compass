@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_VERSION = 'sky-compass-v1';
+var CACHE_VERSION = 'sky-compass-v2';
 var ASSETS = [
   '.',
   'index.html',
@@ -31,13 +31,19 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   if (event.request.method !== 'GET') return;
+  // stale-while-revalidate: キャッシュを即返しつつ裏で再取得して次回起動時に最新化する(圏外ではキャッシュのみで動作)
   event.respondWith(caches.match(event.request).then(function (cached) {
-    return cached || fetch(event.request).then(function (response) {
+    var refresh = fetch(event.request).then(function (response) {
       if (response.ok) {
         var copy = response.clone();
         caches.open(CACHE_VERSION).then(function (cache) { cache.put(event.request, copy); });
       }
       return response;
     });
+    if (cached) {
+      refresh.catch(function () {});
+      return cached;
+    }
+    return refresh;
   }));
 });
