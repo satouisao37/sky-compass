@@ -21,6 +21,7 @@
   };
   var els = {};
   var dailyCache = {};
+  var sky3dCache = {};
   var renderedPathKey = '';
   var orientationListening = false;
   var fovY = 60 * Math.PI / 180;
@@ -310,13 +311,10 @@
     var rect = els.sky3d.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     els.sky3dStatus.style.display = 'none';
-    var loc = state.loc;
-    var date = state.selectedDate;
-    var sun = Astro.sunPosition(date, loc.lat, loc.lon);
-    var moon = Astro.moonPosition(date, loc.lat, loc.lon);
+    var bodies = get3dBodies(state.selectedDate, state.loc);
     var basis = cameraBasis(state.orientation);
-    draw3dBody(els.sun3d, els.sunGuide, sun, basis, rect);
-    draw3dBody(els.moon3d, els.moonGuide, moon, basis, rect);
+    draw3dBody(els.sun3d, els.sunGuide, bodies.sun, basis, rect);
+    draw3dBody(els.moon3d, els.moonGuide, bodies.moon, basis, rect);
   }
   function draw3dBody(bodyEl, guideEl, pos, basis, rect) {
     var out = project3d(pos, basis, rect.width, rect.height);
@@ -324,13 +322,15 @@
     if (out.visible) {
       bodyEl.style.transform = 'translate3d(' + out.x.toFixed(1) + 'px,' + out.y.toFixed(1) + 'px,0)';
       guideEl.style.transform = 'translate3d(-999px,-999px,0)';
+      guideEl.querySelector('.guide-arrow').style.transform = 'rotate(0deg)';
       return;
     }
     bodyEl.style.transform = 'translate3d(-999px,-999px,0)';
-    guideEl.style.transform = 'translate3d(' + out.guideX.toFixed(1) + 'px,' + out.guideY.toFixed(1) + 'px,0) rotate(' + out.guideAngle.toFixed(1) + 'deg)';
+    guideEl.style.transform = 'translate3d(' + out.guideX.toFixed(1) + 'px,' + out.guideY.toFixed(1) + 'px,0)';
+    guideEl.querySelector('.guide-arrow').style.transform = 'rotate(' + out.guideAngle.toFixed(1) + 'deg)';
   }
   function project3d(pos, basis, w, h) {
-    var target = azAltVector(pos.az, pos.alt);
+    var target = pos.vector;
     var x = dot(target, basis.right);
     var y = dot(target, basis.up);
     var z = dot(target, basis.forward);
@@ -340,9 +340,12 @@
     var px = cx + x / Math.max(z, .05) * f;
     var py = cy - y / Math.max(z, .05) * f;
     var pad = 28;
-    var visible = z > .05 && px >= pad && px <= w - pad && py >= pad && py <= h - pad;
-    var dx = visible ? px - cx : x;
-    var dy = visible ? py - cy : -y;
+    var visibleRadius = Math.min(w, h) / 2 - pad;
+    var screenDx = px - cx;
+    var screenDy = py - cy;
+    var visible = z > .05 && Math.sqrt(screenDx * screenDx + screenDy * screenDy) <= visibleRadius;
+    var dx = z > .05 ? screenDx : x;
+    var dy = z > .05 ? screenDy : -y;
     if (z <= .05) {
       dx = -dx;
       dy = -dy;
@@ -361,6 +364,18 @@
       guideY: cy + dy / len * r - 13,
       guideAngle: Math.atan2(dy, dx) * 180 / Math.PI
     };
+  }
+  function get3dBodies(date, loc) {
+    var key = [date.getTime(), loc.lat.toFixed(5), loc.lon.toFixed(5)].join('|');
+    if (!sky3dCache[key]) {
+      if (Object.keys(sky3dCache).length >= 8) sky3dCache = {};
+      var sun = Astro.sunPosition(date, loc.lat, loc.lon);
+      var moon = Astro.moonPosition(date, loc.lat, loc.lon);
+      sun.vector = azAltVector(sun.az, sun.alt);
+      moon.vector = azAltVector(moon.az, moon.alt);
+      sky3dCache[key] = { sun: sun, moon: moon };
+    }
+    return sky3dCache[key];
   }
   function cameraBasis(o) {
     var heading = norm360(o.heading || state.heading);
