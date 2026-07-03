@@ -8,6 +8,15 @@
     manual: false,
     mode: '2d',
     heading: 0,
+    sphere: {
+      az: 180,
+      el: 25,
+      dragging: false,
+      pointerId: null,
+      lastX: 0,
+      lastY: 0,
+      raf: null
+    },
     compassOn: false,
     orientation: {
       alpha: null,
@@ -37,7 +46,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     els.declinationInput.value = state.declination;
@@ -74,6 +83,8 @@
     els.compassBtn.addEventListener('click', enableCompass);
     els.mode2dBtn.addEventListener('click', function () { setMode('2d'); });
     els.mode3dBtn.addEventListener('click', function () { setMode('3d'); });
+    els.modeSphereBtn.addEventListener('click', function () { setMode('sphere'); });
+    bindSphereDrag();
   }
   function loadLoc() {
     try {
@@ -168,13 +179,17 @@
     state.mode = mode;
     els.mode2dBtn.classList.toggle('active', mode === '2d');
     els.mode3dBtn.classList.toggle('active', mode === '3d');
+    els.modeSphereBtn.classList.toggle('active', mode === 'sphere');
     els.mode2dBtn.setAttribute('aria-pressed', mode === '2d' ? 'true' : 'false');
     els.mode3dBtn.setAttribute('aria-pressed', mode === '3d' ? 'true' : 'false');
-    els.skySvg.classList.toggle('hidden', mode === '3d');
+    els.modeSphereBtn.setAttribute('aria-pressed', mode === 'sphere' ? 'true' : 'false');
+    els.skySvg.classList.toggle('hidden', mode !== '2d');
     els.sky3d.hidden = mode !== '3d';
-    els.belowLabel.hidden = mode === '3d';
+    els.sphereSvg.hidden = mode !== 'sphere';
+    els.belowLabel.hidden = mode !== '2d';
     if (mode === '3d') start3dLoop();
     else stop3dLoop();
+    if (mode === 'sphere') renderSphere();
   }
   function ymd(date) {
     return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
@@ -239,6 +254,7 @@
     els.belowLabel.textContent = [sun.alt < 0 ? '太陽は地平線下' : '', moon.alt < 0 ? '月は地平線下' : ''].filter(Boolean).join(' / ');
     renderCompassRotation();
     if (state.mode === '3d') request3dRender();
+    if (state.mode === 'sphere') requestSphereRender();
   }
   function renderCompassRotation() {
     var rot = state.compassOn ? -state.heading : 0;
@@ -267,7 +283,9 @@
         sunTimes: Astro.sunTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         moonTimes: Astro.moonTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         sunPath: paths.sunPath,
-        moonPath: paths.moonPath
+        moonPath: paths.moonPath,
+        sphereSun: paths.sphereSun,
+        sphereMoon: paths.sphereMoon
       };
     }
     return dailyCache[key];
@@ -275,18 +293,25 @@
   function buildPaths(p, loc, tz) {
     var base = Date.UTC(p.y, p.m - 1, p.d) - tz * 60000;
     var sunPts = [], moonPts = [], sunDots = '', moonDots = '';
+    var sphereSun = [], sphereMoon = [];
     for (var h = 0; h <= 24; h++) {
       var dt = new Date(base + h * 3600000);
-      var sp = project(Astro.sunPosition(dt, loc.lat, loc.lon));
-      var mp = project(Astro.moonPosition(dt, loc.lat, loc.lon));
+      var sun = Astro.sunPosition(dt, loc.lat, loc.lon);
+      var moon = Astro.moonPosition(dt, loc.lat, loc.lon);
+      var sp = project(sun);
+      var mp = project(moon);
       sunPts.push((h ? 'L' : 'M') + sp.x.toFixed(1) + ' ' + sp.y.toFixed(1));
       moonPts.push((h ? 'L' : 'M') + mp.x.toFixed(1) + ' ' + mp.y.toFixed(1));
       sunDots += '<circle class="path-dot-sun" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="1.6"/>';
       moonDots += '<circle class="path-dot-moon" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="1.4"/>';
+      sphereSun.push({ az: sun.az, alt: sun.alt, vector: azAltVector(sun.az, sun.alt) });
+      sphereMoon.push({ az: moon.az, alt: moon.alt, vector: azAltVector(moon.az, moon.alt) });
     }
     return {
       sunPath: '<path class="path-sun" d="' + sunPts.join(' ') + '"/>' + sunDots,
-      moonPath: '<path class="path-moon" d="' + moonPts.join(' ') + '"/>' + moonDots
+      moonPath: '<path class="path-moon" d="' + moonPts.join(' ') + '"/>' + moonDots,
+      sphereSun: sphereSun,
+      sphereMoon: sphereMoon
     };
   }
   function drawBody(el, pos, kind, illum) {
@@ -307,6 +332,179 @@
     var r = (90 - alt) / 90 * 100;
     if (pos.alt < 0) r = 104;
     return polar(pos.az, r);
+  }
+  function bindSphereDrag() {
+    els.sphereSvg.addEventListener('pointerdown', function (ev) {
+      state.sphere.dragging = true;
+      state.sphere.pointerId = ev.pointerId;
+      state.sphere.lastX = ev.clientX;
+      state.sphere.lastY = ev.clientY;
+      els.sphereSvg.classList.add('dragging');
+      els.sphereSvg.setPointerCapture(ev.pointerId);
+    });
+    els.sphereSvg.addEventListener('pointermove', function (ev) {
+      if (!state.sphere.dragging || ev.pointerId !== state.sphere.pointerId) return;
+      var dx = ev.clientX - state.sphere.lastX;
+      var dy = ev.clientY - state.sphere.lastY;
+      state.sphere.lastX = ev.clientX;
+      state.sphere.lastY = ev.clientY;
+      state.sphere.az = norm360(state.sphere.az - dx * .45);
+      state.sphere.el = Math.max(5, Math.min(85, state.sphere.el + dy * .28));
+      requestSphereRender();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (type) {
+      els.sphereSvg.addEventListener(type, function (ev) {
+        if (ev.pointerId !== state.sphere.pointerId) return;
+        state.sphere.dragging = false;
+        state.sphere.pointerId = null;
+        els.sphereSvg.classList.remove('dragging');
+      });
+    });
+  }
+  function requestSphereRender() {
+    if (state.mode !== 'sphere' || state.sphere.raf) return;
+    state.sphere.raf = requestAnimationFrame(function () {
+      state.sphere.raf = null;
+      renderSphere();
+    });
+  }
+  function renderSphere() {
+    if (state.mode !== 'sphere') return;
+    var date = state.selectedDate;
+    var loc = state.loc;
+    var p = ymd(date);
+    var tz = -date.getTimezoneOffset();
+    var daily = getDaily(p, loc, tz);
+    var basis = sphereBasis();
+    renderSphereGrid(basis);
+    renderSpherePaths(daily, basis);
+    renderSphereMarkers(date, loc, basis);
+  }
+  function sphereBasis() {
+    var forward = azAltVector(state.sphere.az, state.sphere.el);
+    var zenith = { x: 0, y: 0, z: 1 };
+    var right = cross(zenith, forward);
+    if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
+    right = normalize(right);
+    var up = normalize(cross(forward, right));
+    return { forward: forward, right: right, up: up };
+  }
+  function sphereProject(v, basis) {
+    return {
+      x: dot(v, basis.right) * 100,
+      y: -dot(v, basis.up) * 100,
+      front: dot(v, basis.forward) >= 0
+    };
+  }
+  function renderSphereGrid(basis) {
+    var horizon = sphereCircle(0);
+    var ground = spherePath(horizon, basis);
+    els.sphereGround.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
+      '<path class="sphere-ground" d="' + ground + 'Z"/>' +
+      '<path class="sphere-horizon" d="' + ground + 'Z"/>';
+    var back = '';
+    var front = '';
+    [30, 60].forEach(function (alt) {
+      var html = sphereSplitPaths(sphereCircle(alt), basis, 'sphere-alt', false);
+      back += html.back;
+      front += html.front;
+    });
+    [0, 90].forEach(function (az) {
+      var html = sphereSplitPaths(sphereMeridian(az), basis, 'sphere-meridian', false);
+      back += html.back;
+      front += html.front;
+    });
+    els.sphereGridBack.innerHTML = back;
+    els.sphereGridFront.innerHTML = front;
+    renderSphereLabels(basis);
+  }
+  function renderSphereLabels(basis) {
+    var labels = [
+      { text: 'N', v: azAltVector(0, 0) },
+      { text: 'E', v: azAltVector(90, 0) },
+      { text: 'S', v: azAltVector(180, 0) },
+      { text: 'W', v: azAltVector(270, 0) }
+    ];
+    var html = '';
+    labels.forEach(function (item) {
+      var p = sphereProject(item.v, basis);
+      html += '<text class="sphere-label' + (p.front ? '' : ' sphere-back') + '" x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '">' + item.text + '</text>';
+    });
+    var zen = sphereProject({ x: 0, y: 0, z: 1 }, basis);
+    html += '<g class="sphere-zenith' + (zen.front ? '' : ' sphere-back') + '" transform="translate(' + zen.x.toFixed(1) + ' ' + zen.y.toFixed(1) + ')"><line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/></g>';
+    html += '<text class="sphere-note' + (zen.front ? '' : ' sphere-back') + '" x="' + zen.x.toFixed(1) + '" y="' + (zen.y - 8).toFixed(1) + '">Z</text>';
+    html += '<circle class="sphere-observer" cx="0" cy="0" r="3.2"/>';
+    els.sphereLabels.innerHTML = html;
+  }
+  function renderSpherePaths(daily, basis) {
+    var sun = sphereBodyPath(daily.sphereSun, basis, 'sun');
+    var moon = sphereBodyPath(daily.sphereMoon, basis, 'moon');
+    els.spherePathsBack.innerHTML = sun.back + moon.back;
+    els.spherePathsFront.innerHTML = sun.front + moon.front;
+  }
+  function sphereBodyPath(samples, basis, kind) {
+    var cls = kind === 'sun' ? 'sphere-path-sun' : 'sphere-path-moon';
+    var dotCls = kind === 'sun' ? 'sphere-dot-sun' : 'sphere-dot-moon';
+    var out = sphereSplitPaths(samples, basis, cls, true);
+    samples.forEach(function (sample) {
+      var p = sphereProject(sample.vector, basis);
+      var html = '<circle class="' + dotCls + (sample.alt < 0 ? ' sphere-below' : '') + (p.front ? '' : ' sphere-back') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (kind === 'sun' ? '1.8' : '1.6') + '"/>';
+      if (p.front) out.front += html;
+      else out.back += html;
+    });
+    return out;
+  }
+  function renderSphereMarkers(date, loc, basis) {
+    var sun = Astro.sunPosition(date, loc.lat, loc.lon);
+    var moon = Astro.moonPosition(date, loc.lat, loc.lon);
+    sun.vector = azAltVector(sun.az, sun.alt);
+    moon.vector = azAltVector(moon.az, moon.alt);
+    var sp = sphereProject(sun.vector, basis);
+    var mp = sphereProject(moon.vector, basis);
+    els.sphereMarkers.innerHTML =
+      '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
+      '<circle class="sphere-moon-now' + (moon.alt < 0 ? ' sphere-below' : '') + (mp.front ? '' : ' sphere-back') + '" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/>';
+  }
+  function sphereSplitPaths(samples, basis, cls, dimBelow) {
+    var front = '';
+    var back = '';
+    for (var i = 0; i < samples.length - 1; i++) {
+      var a = sphereSampleVector(samples[i]);
+      var b = sphereSampleVector(samples[i + 1]);
+      var pa = sphereProject(a.vector, basis);
+      var pb = sphereProject(b.vector, basis);
+      var isFront = pa.front && pb.front;
+      var below = dimBelow && (a.alt < 0 || b.alt < 0);
+      var d = 'M' + pa.x.toFixed(1) + ' ' + pa.y.toFixed(1) + 'L' + pb.x.toFixed(1) + ' ' + pb.y.toFixed(1);
+      var html = '<path class="' + cls + (below ? ' sphere-below' : '') + (isFront ? '' : ' sphere-back') + '" d="' + d + '"/>';
+      if (isFront) front += html;
+      else back += html;
+    }
+    return { front: front, back: back };
+  }
+  function spherePath(samples, basis) {
+    var d = '';
+    samples.forEach(function (sample, i) {
+      var p = sphereProject(sphereSampleVector(sample).vector, basis);
+      d += (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+    });
+    return d;
+  }
+  function sphereSampleVector(sample) {
+    if (sample.vector) return sample;
+    return { alt: sample.alt, vector: azAltVector(sample.az, sample.alt) };
+  }
+  function sphereCircle(alt) {
+    var pts = [];
+    for (var az = 0; az <= 360; az += 5) pts.push({ az: az, alt: alt });
+    return pts;
+  }
+  function sphereMeridian(az) {
+    var pts = [];
+    var opp = norm360(az + 180);
+    for (var a = 0; a <= 90; a += 5) pts.push({ az: az, alt: a });
+    for (var b = 85; b >= 0; b -= 5) pts.push({ az: opp, alt: b });
+    return pts;
   }
   function start3dLoop() {
     if (state.raf3d) return;

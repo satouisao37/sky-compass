@@ -24,12 +24,34 @@ button:active { transform: translateY(1px); }
 main { max-width: 620px; margin: 0 auto; }
 
 .compass-section { margin-top: 10px; }
-.mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: min(92vw, 430px); margin: 0 auto 10px; padding: 4px; background: #0f1519; border: 1px solid var(--line); border-radius: 8px; }
+.mode-toggle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: min(92vw, 430px); margin: 0 auto 10px; padding: 4px; background: #0f1519; border: 1px solid var(--line); border-radius: 8px; }
 .mode-toggle button { border: 0; background: transparent; color: var(--muted); border-radius: 6px; padding: 8px 10px; }
 .mode-toggle button.active { background: var(--panel-2); color: var(--text); }
 .compass-wrap { position: relative; width: min(92vw, 430px); margin: 0 auto; aspect-ratio: 1; }
 .sky { width: 100%; height: 100%; display: block; }
 .sky.hidden { display: none; }
+.sphere-sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border: 1px solid var(--line); border-radius: 50%; background: radial-gradient(circle at 50% 42%, #26343d 0, #131c22 62%, #0d1317 100%); touch-action: none; cursor: grab; }
+.sphere-sky[hidden] { display: none; }
+.sphere-sky.dragging { cursor: grabbing; }
+.sphere-ground { fill: rgba(108, 198, 184, .08); stroke: none; }
+.sphere-rim { fill: none; stroke: rgba(153, 168, 176, .34); stroke-width: 1; }
+.sphere-horizon { fill: none; stroke: rgba(237, 244, 247, .78); stroke-width: 1.8; }
+.sphere-alt { fill: none; stroke: rgba(153, 168, 176, .45); stroke-width: .9; stroke-dasharray: 3 3; }
+.sphere-meridian { fill: none; stroke: rgba(153, 168, 176, .5); stroke-width: 1; }
+.sphere-back .sphere-alt, .sphere-back .sphere-meridian, .sphere-back.sphere-rim { opacity: .38; }
+.sphere-path-sun { fill: none; stroke: var(--sun); stroke-width: 1.7; }
+.sphere-path-moon { fill: none; stroke: var(--moon); stroke-width: 1.4; }
+.sphere-dot-sun { fill: var(--sun); }
+.sphere-dot-moon { fill: var(--moon); }
+.sphere-below { opacity: .3; }
+.sphere-back { opacity: .34; }
+.sphere-back.sphere-below { opacity: .14; }
+.sphere-sun-now { fill: var(--sun); stroke: rgba(255, 255, 255, .72); stroke-width: .8; filter: url(#softGlow); }
+.sphere-moon-now { fill: var(--moon); stroke: #a9bcc8; stroke-width: .8; }
+.sphere-observer { fill: var(--accent); stroke: #d8fffa; stroke-width: .8; }
+.sphere-zenith line { stroke: var(--accent); stroke-width: 1.1; }
+.sphere-label { fill: var(--text); font-size: 10px; text-anchor: middle; dominant-baseline: middle; font-weight: 700; text-shadow: 0 1px 4px #000; }
+.sphere-note { fill: var(--muted); font-size: 8px; text-anchor: middle; }
 .horizon { fill: #111920; stroke: var(--line); stroke-width: 1.5; }
 .tick { stroke: #52616b; stroke-width: .7; }
 .tick.major { stroke: #84929a; stroke-width: 1; }
