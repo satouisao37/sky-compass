@@ -122,6 +122,9 @@
     var heading = null;
     if (typeof ev.webkitCompassHeading === 'number') {
       heading = ev.webkitCompassHeading + state.declination;
+      // 直立(beta=90)を超えて空へ向けると webkitCompassHeading は端末上端の水平射影が反対を向き180°反転するため補正
+      // (境界では生値の反転と加算が同時に起きるので補正後は連続)
+      if (typeof ev.beta === 'number' && ev.beta > 90) heading += 180;
     } else if (typeof ev.alpha === 'number') {
       heading = 360 - ev.alpha + state.declination;
     }
