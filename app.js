@@ -30,7 +30,7 @@
   var flipDisagree = 0;
   var vis3d = { sun: false, moon: false };
   var basisPrev = null;
-  var fovY = 60 * Math.PI / 180;
+  var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
@@ -360,31 +360,33 @@
     var z = dot(target, basis.forward);
     var cx = w / 2;
     var cy = h / 2;
-    var f = (h / 2) / Math.tan(fovY / 2);
-    var px = cx + x / Math.max(z, .05) * f;
-    var py = cy - y / Math.max(z, .05) * f;
     var pad = 28;
-    // 可視中は判定半径を広げるヒステリシス(縁でマーカー⇄誘導ピルが点滅しないように)
-    var visibleRadius = Math.min(w, h) / 2 - pad + (wasVisible ? 8 : 0);
-    var screenDx = px - cx;
-    var screenDy = py - cy;
-    var visible = z > .05 && Math.sqrt(screenDx * screenDx + screenDy * screenDy) <= visibleRadius;
-    // 誘導方向: 前方は投影点への向き、背面でも視線直交面への横成分(x,-y)がそのまま曲がるべき向き(反転させると逆を指す)
-    var dx = z > .05 ? screenDx : x;
-    var dy = z > .05 ? screenDy : -y;
-    if (Math.abs(dx) + Math.abs(dy) < .001) {
-      // ほぼ真後ろ: sin(方位差)は180°で0に縮退するため符号だけ使って左右に倒す
+    var edge = Math.min(w, h) / 2 - pad;
+    // 等距離射影: 視線からの角度θに比例した半径へ置く(広角でも歪まず、傾きに対する移動量が一定。
+    // 前方/背面の場合分けが不要になり、マーカーと誘導方向が全天で連続な同一式になる)
+    var theta = Math.acos(Math.max(-1, Math.min(1, z)));
+    var dx = x;
+    var dy = -y;
+    if (Math.abs(dx) + Math.abs(dy) < 1e-6) {
+      // 真正面/真後ろは横成分が縮退する。方位差の符号で左右に倒す(sinは180°で0になるため符号のみ使う)
       dx = Math.sin((pos.az - state.orientation.heading) * Math.PI / 180) >= 0 ? 1 : -1;
       dy = 0;
     }
-    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    dx /= len;
+    dy /= len;
+    // 可視中は判定角を縁8px相当広げるヒステリシス(縁でマーカー⇄誘導ピルが点滅しないように)
+    var visible = theta <= fov3dHalf * (1 + (wasVisible ? 8 / edge : 0));
+    var rPx = theta / fov3dHalf * edge;
+    var px = cx + dx * rPx;
+    var py = cy + dy * rPx;
     var r = Math.min(w, h) / 2 - 38;
     return {
       visible: visible,
       x: px - 35,
       y: py - 21,
-      guideX: cx + dx / len * r - 24,
-      guideY: cy + dy / len * r - 13,
+      guideX: cx + dx * r - 24,
+      guideY: cy + dy * r - 13,
       guideAngle: Math.atan2(dy, dx) * 180 / Math.PI
     };
   }
