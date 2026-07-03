@@ -73,7 +73,13 @@
           <div id="moonGuide" class="sky-3d-guide moon-guide"><span class="guide-arrow"></span><b>月</b></div>
           <div id="sky3dStatus" class="sky-3d-status">コンパス連動を許可してください</div>
         </div>
-        <svg id="sphereSvg" class="sphere-sky" viewBox="-120 -120 240 240" role="img" aria-label="天球上の太陽と月の経路" hidden>
+        <svg id="sphereSvg" class="sphere-sky hidden" viewBox="-120 -120 240 240" role="img" aria-label="天球上の太陽と月の経路">
+          <defs>
+            <filter id="sphereGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
           <g id="sphereGround"></g>
           <g id="sphereGridBack"></g>
           <g id="spherePathsBack"></g>

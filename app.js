@@ -11,7 +11,6 @@
     sphere: {
       az: 180,
       el: 25,
-      dragging: false,
       pointerId: null,
       lastX: 0,
       lastY: 0,
@@ -40,6 +39,8 @@
   var basisPrev = null;
   var ref3d = null;
   var ref3dSize = '';
+  var sphereStatic = buildSphereStatic();
+  var sphereRendered = { view: '', daily: '', marker: '' };
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
@@ -176,6 +177,7 @@
     if (state.mode === '3d') request3dRender();
   }
   function setMode(mode) {
+    if (state.mode === 'sphere' && mode !== 'sphere') endSphereDrag();
     state.mode = mode;
     els.mode2dBtn.classList.toggle('active', mode === '2d');
     els.mode3dBtn.classList.toggle('active', mode === '3d');
@@ -185,7 +187,7 @@
     els.modeSphereBtn.setAttribute('aria-pressed', mode === 'sphere' ? 'true' : 'false');
     els.skySvg.classList.toggle('hidden', mode !== '2d');
     els.sky3d.hidden = mode !== '3d';
-    els.sphereSvg.hidden = mode !== 'sphere';
+    els.sphereSvg.classList.toggle('hidden', mode !== 'sphere');
     els.belowLabel.hidden = mode !== '2d';
     if (mode === '3d') start3dLoop();
     else stop3dLoop();
@@ -335,7 +337,7 @@
   }
   function bindSphereDrag() {
     els.sphereSvg.addEventListener('pointerdown', function (ev) {
-      state.sphere.dragging = true;
+      if (state.sphere.pointerId !== null) return;
       state.sphere.pointerId = ev.pointerId;
       state.sphere.lastX = ev.clientX;
       state.sphere.lastY = ev.clientY;
@@ -343,23 +345,30 @@
       els.sphereSvg.setPointerCapture(ev.pointerId);
     });
     els.sphereSvg.addEventListener('pointermove', function (ev) {
-      if (!state.sphere.dragging || ev.pointerId !== state.sphere.pointerId) return;
+      if (ev.pointerId !== state.sphere.pointerId) return;
       var dx = ev.clientX - state.sphere.lastX;
       var dy = ev.clientY - state.sphere.lastY;
       state.sphere.lastX = ev.clientX;
       state.sphere.lastY = ev.clientY;
-      state.sphere.az = norm360(state.sphere.az - dx * .45);
+      state.sphere.az = norm360(state.sphere.az + dx * .45);
       state.sphere.el = Math.max(5, Math.min(85, state.sphere.el + dy * .28));
       requestSphereRender();
     });
     ['pointerup', 'pointercancel'].forEach(function (type) {
       els.sphereSvg.addEventListener(type, function (ev) {
         if (ev.pointerId !== state.sphere.pointerId) return;
-        state.sphere.dragging = false;
-        state.sphere.pointerId = null;
-        els.sphereSvg.classList.remove('dragging');
+        endSphereDrag();
       });
     });
+  }
+  function endSphereDrag() {
+    if (state.sphere.pointerId !== null) {
+      try {
+        if (els.sphereSvg.hasPointerCapture(state.sphere.pointerId)) els.sphereSvg.releasePointerCapture(state.sphere.pointerId);
+      } catch (e) {}
+    }
+    state.sphere.pointerId = null;
+    els.sphereSvg.classList.remove('dragging');
   }
   function requestSphereRender() {
     if (state.mode !== 'sphere' || state.sphere.raf) return;
@@ -376,9 +385,14 @@
     var tz = -date.getTimezoneOffset();
     var daily = getDaily(p, loc, tz);
     var basis = sphereBasis();
-    renderSphereGrid(basis);
-    renderSpherePaths(daily, basis);
-    renderSphereMarkers(date, loc, basis);
+    var viewKey = state.sphere.az.toFixed(2) + '|' + state.sphere.el.toFixed(2);
+    var markerKey = [date.getTime(), loc.lat.toFixed(5), loc.lon.toFixed(5)].join('|');
+    if (sphereRendered.view !== viewKey) renderSphereGrid(basis);
+    if (sphereRendered.view !== viewKey || sphereRendered.daily !== daily.key) renderSpherePaths(daily, basis);
+    if (sphereRendered.view !== viewKey || sphereRendered.marker !== markerKey) renderSphereMarkers(date, loc, basis);
+    sphereRendered.view = viewKey;
+    sphereRendered.daily = daily.key;
+    sphereRendered.marker = markerKey;
   }
   function sphereBasis() {
     var forward = azAltVector(state.sphere.az, state.sphere.el);
@@ -397,20 +411,19 @@
     };
   }
   function renderSphereGrid(basis) {
-    var horizon = sphereCircle(0);
-    var ground = spherePath(horizon, basis);
+    var ground = spherePath(sphereStatic.horizon, basis);
+    var horizon = sphereSplitPaths(sphereStatic.horizon, basis, 'sphere-horizon', false);
     els.sphereGround.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
-      '<path class="sphere-ground" d="' + ground + 'Z"/>' +
-      '<path class="sphere-horizon" d="' + ground + 'Z"/>';
-    var back = '';
-    var front = '';
-    [30, 60].forEach(function (alt) {
-      var html = sphereSplitPaths(sphereCircle(alt), basis, 'sphere-alt', false);
+      '<path class="sphere-ground" d="' + ground + 'Z"/>';
+    var back = horizon.back;
+    var front = horizon.front;
+    sphereStatic.alts.forEach(function (samples) {
+      var html = sphereSplitPaths(samples, basis, 'sphere-alt', false);
       back += html.back;
       front += html.front;
     });
-    [0, 90].forEach(function (az) {
-      var html = sphereSplitPaths(sphereMeridian(az), basis, 'sphere-meridian', false);
+    sphereStatic.meridians.forEach(function (samples) {
+      var html = sphereSplitPaths(samples, basis, 'sphere-meridian', false);
       back += html.back;
       front += html.front;
     });
@@ -419,18 +432,12 @@
     renderSphereLabels(basis);
   }
   function renderSphereLabels(basis) {
-    var labels = [
-      { text: 'N', v: azAltVector(0, 0) },
-      { text: 'E', v: azAltVector(90, 0) },
-      { text: 'S', v: azAltVector(180, 0) },
-      { text: 'W', v: azAltVector(270, 0) }
-    ];
     var html = '';
-    labels.forEach(function (item) {
+    sphereStatic.labels.forEach(function (item) {
       var p = sphereProject(item.v, basis);
       html += '<text class="sphere-label' + (p.front ? '' : ' sphere-back') + '" x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '">' + item.text + '</text>';
     });
-    var zen = sphereProject({ x: 0, y: 0, z: 1 }, basis);
+    var zen = sphereProject(sphereStatic.zenith, basis);
     html += '<g class="sphere-zenith' + (zen.front ? '' : ' sphere-back') + '" transform="translate(' + zen.x.toFixed(1) + ' ' + zen.y.toFixed(1) + ')"><line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/></g>';
     html += '<text class="sphere-note' + (zen.front ? '' : ' sphere-back') + '" x="' + zen.x.toFixed(1) + '" y="' + (zen.y - 8).toFixed(1) + '">Z</text>';
     html += '<circle class="sphere-observer" cx="0" cy="0" r="3.2"/>';
@@ -455,10 +462,9 @@
     return out;
   }
   function renderSphereMarkers(date, loc, basis) {
-    var sun = Astro.sunPosition(date, loc.lat, loc.lon);
-    var moon = Astro.moonPosition(date, loc.lat, loc.lon);
-    sun.vector = azAltVector(sun.az, sun.alt);
-    moon.vector = azAltVector(moon.az, moon.alt);
+    var bodies = get3dBodies(date, loc);
+    var sun = bodies.sun;
+    var moon = bodies.moon;
     var sp = sphereProject(sun.vector, basis);
     var mp = sphereProject(moon.vector, basis);
     els.sphereMarkers.innerHTML =
@@ -469,8 +475,8 @@
     var front = '';
     var back = '';
     for (var i = 0; i < samples.length - 1; i++) {
-      var a = sphereSampleVector(samples[i]);
-      var b = sphereSampleVector(samples[i + 1]);
+      var a = samples[i];
+      var b = samples[i + 1];
       var pa = sphereProject(a.vector, basis);
       var pb = sphereProject(b.vector, basis);
       var isFront = pa.front && pb.front;
@@ -485,26 +491,36 @@
   function spherePath(samples, basis) {
     var d = '';
     samples.forEach(function (sample, i) {
-      var p = sphereProject(sphereSampleVector(sample).vector, basis);
+      var p = sphereProject(sample.vector, basis);
       d += (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
     });
     return d;
   }
-  function sphereSampleVector(sample) {
-    if (sample.vector) return sample;
-    return { alt: sample.alt, vector: azAltVector(sample.az, sample.alt) };
-  }
   function sphereCircle(alt) {
     var pts = [];
-    for (var az = 0; az <= 360; az += 5) pts.push({ az: az, alt: alt });
+    for (var az = 0; az <= 360; az += 5) pts.push({ az: az, alt: alt, vector: azAltVector(az, alt) });
     return pts;
   }
   function sphereMeridian(az) {
     var pts = [];
     var opp = norm360(az + 180);
-    for (var a = 0; a <= 90; a += 5) pts.push({ az: az, alt: a });
-    for (var b = 85; b >= 0; b -= 5) pts.push({ az: opp, alt: b });
+    for (var a = 0; a <= 90; a += 5) pts.push({ az: az, alt: a, vector: azAltVector(az, a) });
+    for (var b = 85; b >= 0; b -= 5) pts.push({ az: opp, alt: b, vector: azAltVector(opp, b) });
     return pts;
+  }
+  function buildSphereStatic() {
+    return {
+      horizon: sphereCircle(0),
+      alts: [sphereCircle(30), sphereCircle(60)],
+      meridians: [sphereMeridian(0), sphereMeridian(90)],
+      labels: [
+        { text: 'N', v: azAltVector(0, 0) },
+        { text: 'E', v: azAltVector(90, 0) },
+        { text: 'S', v: azAltVector(180, 0) },
+        { text: 'W', v: azAltVector(270, 0) }
+      ],
+      zenith: { x: 0, y: 0, z: 1 }
+    };
   }
   function start3dLoop() {
     if (state.raf3d) return;
