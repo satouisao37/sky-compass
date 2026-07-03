@@ -25,6 +25,7 @@
   var renderedPathKey = '';
   var orientationListening = false;
   var headingOutliers = 0;
+  var flipDisagree = 0;
   var vis3d = { sun: false, moon: false };
   var fovY = 60 * Math.PI / 180;
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
@@ -123,10 +124,7 @@
   function onOrientation(ev) {
     var heading = null;
     if (typeof ev.webkitCompassHeading === 'number') {
-      heading = ev.webkitCompassHeading + state.declination;
-      // 直立(beta=90)を超えて空へ向けると webkitCompassHeading は端末上端の水平射影が反対を向き180°反転するため補正
-      // (境界では生値の反転と加算が同時に起きるので補正後は連続)
-      if (typeof ev.beta === 'number' && ev.beta > 90) heading += 180;
+      heading = withFlipCorrection(ev.webkitCompassHeading + state.declination, ev.beta);
     } else if (typeof ev.alpha === 'number') {
       heading = 360 - ev.alpha + state.declination;
     }
@@ -450,6 +448,33 @@
   }
   function angleDiff(a, b) {
     return (a - b + 540) % 360 - 180;
+  }
+  // webkitCompassHeading は直立(beta=90)を超えると端末上端の水平射影が反対を向き180°反転する。
+  // ただしコンパスと姿勢は別パイプラインで反転の届くタイミングが遅延分ずれるため、beta だけで
+  // 補正すると遅延窓の間180°誤る(一瞬別方向へ振れて戻る)。そこで反転有無は「平滑方位への連続性」
+  // で選び、境界から離れた姿勢で長時間逆側を選び続けたときだけ姿勢側へ矯正する(誤ロック保険)。
+  function withFlipCorrection(base, beta) {
+    var hasBeta = typeof beta === 'number';
+    var useFlip;
+    if (!state.orientation.ready) {
+      useFlip = hasBeta && beta > 90;
+    } else {
+      useFlip = Math.abs(angleDiff(base + 180, state.orientation.heading)) < Math.abs(angleDiff(base, state.orientation.heading));
+      if (hasBeta && Math.abs(beta - 90) > 20) {
+        if (useFlip !== (beta > 90)) {
+          flipDisagree++;
+          if (flipDisagree >= 60) {
+            useFlip = beta > 90;
+            state.orientation.heading = norm360(base + (useFlip ? 180 : 0));
+            state.heading = state.orientation.heading;
+            flipDisagree = 0;
+          }
+        } else {
+          flipDisagree = 0;
+        }
+      }
+    }
+    return base + (useFlip ? 180 : 0);
   }
   function screenAngle() {
     if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
