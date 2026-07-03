@@ -381,7 +381,8 @@
     var heading = norm360(o.heading || state.heading);
     var beta = clamp(o.beta === null ? 90 : o.beta, -90, 180);
     var gamma = clamp(o.gamma === null ? 0 : o.gamma, -90, 90);
-    var lookAlt = clamp(90 - beta, -85, 85) * Math.PI / 180;
+    // beta は直立=90 / 画面下向き(背面が天頂)=180 なので、見上げ角は beta-90(逆にすると上下反転する)
+    var lookAlt = clamp(beta - 90, -85, 85) * Math.PI / 180;
     var top = azAltVector(heading, 0);
     var right = azAltVector(heading + 90, 0);
     var zenith = { x: 0, y: 0, z: 1 };
