@@ -33,6 +33,10 @@
     </section>
 
     <section class="compass-section" aria-label="空のコンパス">
+      <div class="mode-toggle" role="group" aria-label="表示モード">
+        <button id="mode2dBtn" type="button" class="active" aria-pressed="true">2Dコンパス</button>
+        <button id="mode3dBtn" type="button" aria-pressed="false">3Dかざし</button>
+      </div>
       <div class="compass-wrap">
         <svg id="skySvg" class="sky" viewBox="-120 -120 240 240" role="img" aria-label="太陽と月の方位高度">
           <defs>
@@ -54,6 +58,20 @@
             <g id="moonMarker"></g>
           </g>
         </svg>
+        <div id="sky3d" class="sky-3d" aria-label="3Dかざしモード" hidden>
+          <div class="sky-3d-grid" aria-hidden="true"></div>
+          <div id="sun3d" class="sky-3d-body sun-3d">
+            <span class="body-disc"></span>
+            <span class="body-label">太陽</span>
+          </div>
+          <div id="moon3d" class="sky-3d-body moon-3d">
+            <span class="body-disc"></span>
+            <span class="body-label">月</span>
+          </div>
+          <div id="sunGuide" class="sky-3d-guide sun-guide"><span class="guide-arrow"></span><b>太陽</b></div>
+          <div id="moonGuide" class="sky-3d-guide moon-guide"><span class="guide-arrow"></span><b>月</b></div>
+          <div id="sky3dStatus" class="sky-3d-status">コンパス連動を許可してください</div>
+        </div>
         <div id="belowLabel" class="below-label"></div>
       </div>
       <div class="compass-actions">
