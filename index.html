@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101418">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>そらコンパス</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p id="dateLabel" class="date-label">--</p>
+      <p id="placeLabel" class="place-label">位置を確認中</p>
+    </div>
+    <button id="locateBtn" type="button">現在地</button>
+  </header>
+
+  <main>
+    <section class="compass-section" aria-label="空のコンパス">
+      <div class="compass-wrap">
+        <svg id="skySvg" class="sky" viewBox="-120 -120 240 240" role="img" aria-label="太陽と月の方位高度">
+          <defs>
+            <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="rotatingSky">
+            <circle class="horizon" cx="0" cy="0" r="100"/>
+            <g id="ticks"></g>
+            <g class="cardinals">
+              <text x="0" y="-104">N</text><text x="104" y="4">E</text>
+              <text x="0" y="112">S</text><text x="-104" y="4">W</text>
+            </g>
+            <g id="sunPath"></g>
+            <g id="moonPath"></g>
+            <g id="sunMarker"></g>
+            <g id="moonMarker"></g>
+          </g>
+        </svg>
+        <div id="belowLabel" class="below-label"></div>
+      </div>
+      <div class="compass-actions">
+        <button id="compassBtn" type="button">コンパス連動</button>
+        <span id="compassStatus">北上固定</span>
+      </div>
+    </section>
+
+    <section class="cards">
+      <article><h2>太陽</h2><p id="sunNow">--</p><p id="sunTimes">--</p></article>
+      <article><h2>月</h2><p id="moonNow">--</p><p id="moonTimes">--</p></article>
+      <article><h2>撮影時間</h2><p id="lightTimes">--</p></article>
+    </section>
+
+    <section class="time-panel">
+      <div class="date-controls">
+        <button id="prevDay" type="button" aria-label="前日">◀</button>
+        <input id="dateInput" type="date">
+        <button id="nextDay" type="button" aria-label="翌日">▶</button>
+        <button id="nowBtn" type="button">今</button>
+      </div>
+      <label class="slider-label" for="timeSlider"><span>時刻</span><strong id="timeLabel">--:--</strong></label>
+      <input id="timeSlider" type="range" min="0" max="1435" step="5" value="720">
+    </section>
+
+    <details class="settings">
+      <summary>設定</summary>
+      <label>磁気偏角 <input id="declinationInput" type="number" step="0.1" value="-7.7"> 度</label>
+      <p>実際の太陽の方向とズレる場合は 0 を試す</p>
+      <div class="manual-loc">
+        <label>緯度 <input id="latInput" type="number" step="0.0001"></label>
+        <label>経度 <input id="lonInput" type="number" step="0.0001"></label>
+        <button id="applyLocBtn" type="button">座標を適用</button>
+      </div>
+    </details>
+  </main>
+
+  <script src="astro.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

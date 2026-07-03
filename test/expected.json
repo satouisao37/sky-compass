@@ -1,0 +1,49 @@
+{
+  "_comment": "USNO API (aa.usno.navy.mil/api/rstt/oneday, tz=+9) 由来の参照値。2026-07-03 取得。編集禁止。許容誤差: 太陽時刻±2分 / 月時刻±5分 / 輝面比(12:00 JST 時点)±0.05",
+  "cases": [
+    {
+      "name": "東京 2026-07-03",
+      "date": "2026-07-03",
+      "lat": 35.6812,
+      "lon": 139.7671,
+      "tzOffsetMin": 540,
+      "sun": {
+        "civilDawn": "04:00",
+        "rise": "04:29",
+        "transit": "11:45",
+        "set": "19:01",
+        "civilDusk": "19:31",
+        "transitAltRange": [76.0, 78.5]
+      },
+      "moon": {
+        "transit": "01:53",
+        "set": "07:07",
+        "rise": "21:14",
+        "fracillum": 0.91,
+        "phaseName": "Waning Gibbous"
+      }
+    },
+    {
+      "name": "那覇 2026-12-21",
+      "date": "2026-12-21",
+      "lat": 26.2124,
+      "lon": 127.6809,
+      "tzOffsetMin": 540,
+      "sun": {
+        "civilDawn": "06:47",
+        "rise": "07:12",
+        "transit": "12:27",
+        "set": "17:42",
+        "civilDusk": "18:07",
+        "transitAltRange": [39.3, 41.3]
+      },
+      "moon": {
+        "set": "03:50",
+        "rise": "14:47",
+        "transit": "21:50",
+        "fracillum": 0.88,
+        "phaseName": "Waxing Gibbous"
+      }
+    }
+  ]
+}
