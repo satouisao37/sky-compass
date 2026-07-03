@@ -1,6 +1,6 @@
 {
-  "name": "そらコンパス",
-  "short_name": "そらコンパス",
+  "name": "スカイコンパス",
+  "short_name": "スカイコンパス",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
