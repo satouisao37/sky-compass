@@ -24,6 +24,8 @@
   var sky3dCache = {};
   var renderedPathKey = '';
   var orientationListening = false;
+  var headingOutliers = 0;
+  var vis3d = { sun: false, moon: false };
   var fovY = 60 * Math.PI / 180;
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
@@ -129,17 +131,31 @@
       heading = 360 - ev.alpha + state.declination;
     }
     if (heading !== null) {
-      var wasReady = state.orientation.ready;
-      state.heading = wasReady ? smoothAngle(state.heading, heading, .22) : norm360(heading);
-      state.orientation.heading = wasReady ? smoothAngle(state.orientation.heading, heading, .22) : norm360(heading);
-      state.orientation.ready = true;
+      if (!state.orientation.ready) {
+        state.heading = norm360(heading);
+        state.orientation.heading = state.heading;
+        state.orientation.ready = true;
+      } else if (Math.abs(angleDiff(heading, state.orientation.heading)) > 120) {
+        // 水平付近はコンパスと姿勢のパイプライン差で180°反転のタイミングがずれ得る。
+        // 単発の外れ値は棄却し、連続したときだけ実際の反転とみなして即ジャンプ(EMAで混ぜると大回りに振れる)
+        headingOutliers++;
+        if (headingOutliers >= 3) {
+          state.heading = norm360(heading);
+          state.orientation.heading = state.heading;
+          headingOutliers = 0;
+        }
+      } else {
+        headingOutliers = 0;
+        state.heading = smoothAngle(state.heading, heading, .22);
+        state.orientation.heading = smoothAngle(state.orientation.heading, heading, .22);
+      }
       renderCompassRotation();
     } else {
       els.compassStatus.textContent = '方位が取得できません';
     }
     if (typeof ev.alpha === 'number') state.orientation.alpha = ev.alpha;
     if (typeof ev.beta === 'number') state.orientation.beta = smoothValue(state.orientation.beta, ev.beta, .22);
-    if (typeof ev.gamma === 'number') state.orientation.gamma = smoothValue(state.orientation.gamma, ev.gamma, .22);
+    if (typeof ev.gamma === 'number') state.orientation.gamma = smoothRoll(state.orientation.gamma, ev.gamma, .22);
     if (state.mode === '3d') request3dRender();
   }
   function setMode(mode) {
@@ -316,11 +332,12 @@
     els.sky3dStatus.style.display = 'none';
     var bodies = get3dBodies(state.selectedDate, state.loc);
     var basis = cameraBasis(state.orientation);
-    draw3dBody(els.sun3d, els.sunGuide, bodies.sun, basis, rect);
-    draw3dBody(els.moon3d, els.moonGuide, bodies.moon, basis, rect);
+    draw3dBody(els.sun3d, els.sunGuide, bodies.sun, basis, rect, 'sun');
+    draw3dBody(els.moon3d, els.moonGuide, bodies.moon, basis, rect, 'moon');
   }
-  function draw3dBody(bodyEl, guideEl, pos, basis, rect) {
-    var out = project3d(pos, basis, rect.width, rect.height);
+  function draw3dBody(bodyEl, guideEl, pos, basis, rect, kind) {
+    var out = project3d(pos, basis, rect.width, rect.height, vis3d[kind]);
+    vis3d[kind] = out.visible;
     bodyEl.classList.toggle('below', pos.alt < 0);
     if (out.visible) {
       bodyEl.style.transform = 'translate3d(' + out.x.toFixed(1) + 'px,' + out.y.toFixed(1) + 'px,0)';
@@ -332,7 +349,7 @@
     guideEl.style.transform = 'translate3d(' + out.guideX.toFixed(1) + 'px,' + out.guideY.toFixed(1) + 'px,0)';
     guideEl.querySelector('.guide-arrow').style.transform = 'rotate(' + out.guideAngle.toFixed(1) + 'deg)';
   }
-  function project3d(pos, basis, w, h) {
+  function project3d(pos, basis, w, h, wasVisible) {
     var target = pos.vector;
     var x = dot(target, basis.right);
     var y = dot(target, basis.up);
@@ -343,7 +360,8 @@
     var px = cx + x / Math.max(z, .05) * f;
     var py = cy - y / Math.max(z, .05) * f;
     var pad = 28;
-    var visibleRadius = Math.min(w, h) / 2 - pad;
+    // 可視中は判定半径を広げるヒステリシス(縁でマーカー⇄誘導ピルが点滅しないように)
+    var visibleRadius = Math.min(w, h) / 2 - pad + (wasVisible ? 8 : 0);
     var screenDx = px - cx;
     var screenDy = py - cy;
     var visible = z > .05 && Math.sqrt(screenDx * screenDx + screenDy * screenDy) <= visibleRadius;
@@ -418,6 +436,20 @@
   }
   function smoothValue(prev, next, rate) {
     return prev === null || !isFinite(prev) ? next : prev * (1 - rate) + next * rate;
+  }
+  function smoothRoll(prev, next, rate) {
+    if (prev === null || !isFinite(prev)) return next;
+    // gamma は±90でオイラー表現が切り替わり +89⇄-89 と飛ぶため、周期180の最短差分で平滑化(線形EMAだと0経由で一瞬90°狂う)
+    var diff = (next - prev + 90) % 180;
+    if (diff < 0) diff += 180;
+    diff -= 90;
+    var out = prev + diff * rate;
+    if (out >= 90) out -= 180;
+    if (out < -90) out += 180;
+    return out;
+  }
+  function angleDiff(a, b) {
+    return (a - b + 540) % 360 - 180;
   }
   function screenAngle() {
     if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
