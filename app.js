@@ -27,7 +27,6 @@
   var renderedPathKey = '';
   var orientationListening = false;
   var headingOutliers = 0;
-  var flipDisagree = 0;
   var vis3d = { sun: false, moon: false };
   var basisPrev = null;
   var ref3d = null;
@@ -154,7 +153,8 @@
         state.orientation.heading = smoothAngle(state.orientation.heading, heading, .22);
       }
       renderCompassRotation();
-    } else {
+    } else if (typeof ev.webkitCompassHeading !== 'number' && typeof ev.alpha !== 'number') {
+      // コンパスは来ているが初期化待ち(斜め上で開始した場合)は黙って次サンプルを待つ
       els.compassStatus.textContent = '方位が取得できません';
     }
     // 3D姿勢は生値を保持し、平滑化は基底ベクトル側(cameraBasis)で行う
@@ -479,9 +479,20 @@
     var top = deviceAxes(o.alpha, o.beta, o.gamma).up;
     var horiz = Math.sqrt(top.x * top.x + top.y * top.y);
     if (horiz < .2) return; // 上端がほぼ鉛直(水平狙い付近)は射影もコンパスも縮退するため更新を凍結
-    var target = ev.webkitCompassHeading + state.declination - azimuthOf(top);
-    o.delta = o.deltaReady ? smoothAngle(o.delta, target, .22) : norm360(target);
-    o.deltaReady = true;
+    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(top));
+    if (!o.deltaReady) {
+      // 初期化は基準軸の取り違えが起きない姿勢(直立未満: 上端射影=背面射影)に限る
+      if (o.beta >= 80) return;
+      o.delta = t;
+      o.deltaReady = true;
+      return;
+    }
+    // iOSコンパスは姿勢の帯域によって基準軸(上端射影/背面射影)が切り替わり、値が180°入れ替わる
+    // (斜め上帯域で背面基準になる実測挙動)。δは物理的にほぼ一定なので、
+    // 候補 t / t+180 のうち現在のδに近い方を採用する(連続性選択)
+    var t2 = t + 180;
+    var target = Math.abs(angleDiff(t, o.delta)) <= Math.abs(angleDiff(t2, o.delta)) ? t : t2;
+    o.delta = smoothAngle(o.delta, target, .22);
   }
   function azimuthOf(v) {
     return norm360(Math.atan2(v.x, v.y) * 180 / Math.PI);
@@ -535,32 +546,16 @@
   function angleDiff(a, b) {
     return (a - b + 540) % 360 - 180;
   }
-  // webkitCompassHeading は直立(beta=90)を超えると端末上端の水平射影が反対を向き180°反転する。
-  // ただしコンパスと姿勢は別パイプラインで反転の届くタイミングが遅延分ずれるため、beta だけで
-  // 補正すると遅延窓の間180°誤る(一瞬別方向へ振れて戻る)。そこで反転有無は「平滑方位への連続性」
-  // で選び、境界から離れた姿勢で長時間逆側を選び続けたときだけ姿勢側へ矯正する(誤ロック保険)。
+  // iOSコンパスは姿勢の帯域によって基準軸(上端射影/背面射影)が切り替わり、値が180°入れ替わる。
+  // 0/180°のどちらが正しいかは平滑方位への連続性で選ぶ。初期化だけは取り違えが起きない
+  // 姿勢(直立未満: 両基準が一致)に限定する。beta を根拠にした強制矯正は斜め上帯域で
+  // 誤発動する(反転しないのが正しい帯域)ため置かない。
   function withFlipCorrection(base, beta) {
-    var hasBeta = typeof beta === 'number';
-    var useFlip;
     if (!state.orientation.ready) {
-      useFlip = hasBeta && beta > 90;
-    } else {
-      useFlip = Math.abs(angleDiff(base + 180, state.orientation.heading)) < Math.abs(angleDiff(base, state.orientation.heading));
-      if (hasBeta && Math.abs(beta - 90) > 20) {
-        if (useFlip !== (beta > 90)) {
-          flipDisagree++;
-          if (flipDisagree >= 60) {
-            useFlip = beta > 90;
-            state.orientation.heading = norm360(base + (useFlip ? 180 : 0));
-            state.heading = state.orientation.heading;
-            flipDisagree = 0;
-          }
-        } else {
-          flipDisagree = 0;
-        }
-      }
+      return typeof beta === 'number' && beta >= 80 ? null : base;
     }
-    return base + (useFlip ? 180 : 0);
+    var flipped = base + 180;
+    return Math.abs(angleDiff(flipped, state.orientation.heading)) < Math.abs(angleDiff(base, state.orientation.heading)) ? flipped : base;
   }
   function screenAngle() {
     if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
