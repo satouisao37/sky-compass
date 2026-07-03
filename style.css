@@ -44,10 +44,11 @@ main { max-width: 620px; margin: 0 auto; }
 .below { opacity: .35; }
 .below-label { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; }
 .sky-3d { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: radial-gradient(circle at 50% 38%, #22303a 0, #121b22 58%, #0d1317 100%); }
-.sky-3d-grid { position: absolute; inset: 12%; border: 1px solid rgba(153, 168, 176, .28); border-radius: 50%; }
-.sky-3d-grid::before, .sky-3d-grid::after { content: ""; position: absolute; background: rgba(153, 168, 176, .22); }
-.sky-3d-grid::before { left: 50%; top: 0; bottom: 0; width: 1px; }
-.sky-3d-grid::after { left: 0; right: 0; top: 50%; height: 1px; }
+.sky-3d-ref { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sky-3d-ref .horizon3d { fill: none; stroke: rgba(153, 168, 176, .5); stroke-width: 1.2; }
+.sky-3d-ref .zenith3d line { stroke: rgba(153, 168, 176, .55); stroke-width: 1; }
+.sky-3d-ref .aim3d line { stroke: rgba(153, 168, 176, .3); stroke-width: 1; }
+.sky-3d-ref .card3d { fill: #9aa8b0; font-size: 12px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
 /* JS が translate3d へビューポート左上原点の絶対座標を渡すため、アンカーは 0,0 に固定する(50%にすると二重オフセット) */
 .sky-3d-body { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 5px; width: 70px; color: var(--text); font-size: 12px; font-weight: 700; text-align: center; pointer-events: none; transform: translate3d(-999px, -999px, 0); text-shadow: 0 1px 6px #000; }
 .sky-3d-body .body-disc { width: 28px; height: 28px; border-radius: 50%; display: block; }

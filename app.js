@@ -30,14 +30,17 @@
   var flipDisagree = 0;
   var vis3d = { sun: false, moon: false };
   var basisPrev = null;
+  var ref3d = null;
+  var ref3dSize = '';
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','skySvg','sky3d','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
+    buildRef3d();
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
     els.lonInput.value = state.loc.lon.toFixed(4);
@@ -336,6 +339,7 @@
     els.sky3dStatus.style.display = 'none';
     var bodies = get3dBodies(state.selectedDate, state.loc);
     var basis = cameraBasis(state.orientation);
+    render3dRef(basis, rect);
     draw3dBody(els.sun3d, els.sunGuide, bodies.sun, basis, rect, 'sun');
     draw3dBody(els.moon3d, els.moonGuide, bodies.moon, basis, rect, 'moon');
   }
@@ -353,42 +357,88 @@
     guideEl.style.transform = 'translate3d(' + out.guideX.toFixed(1) + 'px,' + out.guideY.toFixed(1) + 'px,0)';
     guideEl.querySelector('.guide-arrow').style.transform = 'rotate(' + out.guideAngle.toFixed(1) + 'deg)';
   }
+  // 等距離射影: 視線からの角度θに比例した半径へ置く(広角でも歪まず、傾きに対する移動量が一定。
+  // 前方/背面の場合分けが不要で、全天が連続な同一式になる)
+  function projectVec(v, basis, w, h) {
+    var x = dot(v, basis.right);
+    var y = dot(v, basis.up);
+    var z = dot(v, basis.forward);
+    var theta = Math.acos(Math.max(-1, Math.min(1, z)));
+    var lat = Math.sqrt(x * x + y * y);
+    var dx = lat > 1e-6 ? x / lat : 0;
+    var dy = lat > 1e-6 ? -y / lat : 0;
+    var rPx = theta / fov3dHalf * (Math.min(w, h) / 2 - 28);
+    return { x: w / 2 + dx * rPx, y: h / 2 + dy * rPx, theta: theta, dx: dx, dy: dy };
+  }
   function project3d(pos, basis, w, h, wasVisible) {
-    var target = pos.vector;
-    var x = dot(target, basis.right);
-    var y = dot(target, basis.up);
-    var z = dot(target, basis.forward);
+    var p = projectVec(pos.vector, basis, w, h);
     var cx = w / 2;
     var cy = h / 2;
-    var pad = 28;
-    var edge = Math.min(w, h) / 2 - pad;
-    // 等距離射影: 視線からの角度θに比例した半径へ置く(広角でも歪まず、傾きに対する移動量が一定。
-    // 前方/背面の場合分けが不要になり、マーカーと誘導方向が全天で連続な同一式になる)
-    var theta = Math.acos(Math.max(-1, Math.min(1, z)));
-    var dx = x;
-    var dy = -y;
-    if (Math.abs(dx) + Math.abs(dy) < 1e-6) {
+    var edge = Math.min(w, h) / 2 - 28;
+    var dx = p.dx;
+    var dy = p.dy;
+    if (!dx && !dy) {
       // 真正面/真後ろは横成分が縮退する。方位差の符号で左右に倒す(sinは180°で0になるため符号のみ使う)
       dx = Math.sin((pos.az - state.orientation.heading) * Math.PI / 180) >= 0 ? 1 : -1;
-      dy = 0;
     }
-    var len = Math.sqrt(dx * dx + dy * dy);
-    dx /= len;
-    dy /= len;
+    var rPx = p.theta / fov3dHalf * edge;
     // 可視中は判定角を縁8px相当広げるヒステリシス(縁でマーカー⇄誘導ピルが点滅しないように)
-    var visible = theta <= fov3dHalf * (1 + (wasVisible ? 8 / edge : 0));
-    var rPx = theta / fov3dHalf * edge;
-    var px = cx + dx * rPx;
-    var py = cy + dy * rPx;
+    var visible = p.theta <= fov3dHalf * (1 + (wasVisible ? 8 / edge : 0));
     var r = Math.min(w, h) / 2 - 38;
     return {
       visible: visible,
-      x: px - 35,
-      y: py - 21,
+      x: cx + dx * rPx - 35,
+      y: cy + dy * rPx - 21,
       guideX: cx + dx * r - 24,
       guideY: cy + dy * r - 13,
       guideAngle: Math.atan2(dy, dx) * 180 / Math.PI
     };
+  }
+  function buildRef3d() {
+    els.sky3dRef.innerHTML = '<path class="horizon3d"/>' +
+      '<g class="zenith3d"><line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/></g>' +
+      '<g class="aim3d"><line x1="-7" y1="0" x2="7" y2="0"/><line x1="0" y1="-7" x2="0" y2="7"/></g>' +
+      '<text class="card3d">N</text><text class="card3d">E</text><text class="card3d">S</text><text class="card3d">W</text>';
+    var texts = els.sky3dRef.querySelectorAll('text');
+    ref3d = {
+      path: els.sky3dRef.querySelector('path'),
+      zenith: els.sky3dRef.querySelector('.zenith3d'),
+      aim: els.sky3dRef.querySelector('.aim3d'),
+      cards: [texts[0], texts[1], texts[2], texts[3]]
+    };
+  }
+  // 基準表示: 地平線・天頂・方位文字を同じ投影で描く(マーカー位置を方角として誤読しないための手がかり)
+  function render3dRef(basis, rect) {
+    var w = rect.width;
+    var h = rect.height;
+    var size = Math.round(w) + 'x' + Math.round(h);
+    if (ref3dSize !== size) {
+      els.sky3dRef.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+      ref3d.aim.setAttribute('transform', 'translate(' + (w / 2).toFixed(1) + ' ' + (h / 2).toFixed(1) + ')');
+      ref3dSize = size;
+    }
+    var d = '';
+    for (var az = 0; az <= 360; az += 6) {
+      var p = projectVec(azAltVector(az, 0), basis, w, h);
+      d += (az ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+    }
+    ref3d.path.setAttribute('d', d);
+    var zen = projectVec({ x: 0, y: 0, z: 1 }, basis, w, h);
+    ref3d.zenith.setAttribute('transform', 'translate(' + zen.x.toFixed(1) + ' ' + zen.y.toFixed(1) + ')');
+    ref3d.zenith.style.display = zen.theta <= fov3dHalf ? '' : 'none';
+    var rim = Math.min(w, h) / 2 - 16;
+    for (var i = 0; i < 4; i++) {
+      var c = projectVec(azAltVector(i * 90, 0), basis, w, h);
+      var x = c.x;
+      var y = c.y;
+      if (c.theta > fov3dHalf) {
+        // 視界外の方角は縁に沿わせて常時表示(どの姿勢でも方角が分かるように)
+        x = w / 2 + c.dx * rim;
+        y = h / 2 + c.dy * rim;
+      }
+      ref3d.cards[i].setAttribute('x', x.toFixed(1));
+      ref3d.cards[i].setAttribute('y', y.toFixed(1));
+    }
   }
   function get3dBodies(date, loc) {
     var key = [date.getTime(), loc.lat.toFixed(5), loc.lon.toFixed(5)].join('|');
