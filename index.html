@@ -21,6 +21,17 @@
   </header>
 
   <main>
+    <section class="time-panel">
+      <div class="date-controls">
+        <button id="prevDay" type="button" aria-label="前日">◀</button>
+        <input id="dateInput" type="date">
+        <button id="nextDay" type="button" aria-label="翌日">▶</button>
+        <button id="nowBtn" type="button">今</button>
+      </div>
+      <label class="slider-label" for="timeSlider"><span>時刻</span><strong id="timeLabel">--:--</strong></label>
+      <input id="timeSlider" type="range" min="0" max="1435" step="5" value="720">
+    </section>
+
     <section class="compass-section" aria-label="空のコンパス">
       <div class="compass-wrap">
         <svg id="skySvg" class="sky" viewBox="-120 -120 240 240" role="img" aria-label="太陽と月の方位高度">
@@ -55,17 +66,6 @@
       <article><h2>太陽</h2><p id="sunNow">--</p><p id="sunTimes">--</p></article>
       <article><h2>月</h2><p id="moonNow">--</p><p id="moonTimes">--</p></article>
       <article><h2>撮影時間</h2><p id="lightTimes">--</p></article>
-    </section>
-
-    <section class="time-panel">
-      <div class="date-controls">
-        <button id="prevDay" type="button" aria-label="前日">◀</button>
-        <input id="dateInput" type="date">
-        <button id="nextDay" type="button" aria-label="翌日">▶</button>
-        <button id="nowBtn" type="button">今</button>
-      </div>
-      <label class="slider-label" for="timeSlider"><span>時刻</span><strong id="timeLabel">--:--</strong></label>
-      <input id="timeSlider" type="range" min="0" max="1435" step="5" value="720">
     </section>
 
     <details class="settings">
