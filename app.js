@@ -676,15 +676,18 @@
     renderSpherePathsInto(mapSphereTargets(), daily, basis);
   }
   function renderMapSphereMarkers(sunPos, moonPos, illum, basis) {
-    var sun = { az: sunPos.az, alt: sunPos.alt, vector: azAltVector(sunPos.az, sunPos.alt) };
-    var moon = { az: moonPos.az, alt: moonPos.alt, vector: azAltVector(moonPos.az, moonPos.alt) };
-    var sp = sphereProject(sun.vector, basis);
-    var mp = sphereProject(moon.vector, basis);
-    var shadow = moonShadowGeom(illum.fraction, illum.age, mp.x);
     // 地図モードでは意図的に天球モードの正射影ドームへ切り替える。tilt=0 の平面コンパス曲線とは異なる。
-    els.mapSphereMarkers.innerHTML =
-      '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
-      '<g class="' + (moon.alt < 0 ? 'sphere-below ' : '') + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.rx.toFixed(1) + '" ry="4.7"/></g>';
+    var html = '';
+    if (sunPos.alt >= 0) { // 地平線下は描かない
+      var sp = sphereProject(azAltVector(sunPos.az, sunPos.alt), basis);
+      html += '<circle class="sphere-sun-now' + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>';
+    }
+    if (moonPos.alt >= 0) {
+      var mp = sphereProject(azAltVector(moonPos.az, moonPos.alt), basis);
+      var shadow = moonShadowGeom(illum.fraction, illum.age, mp.x);
+      html += '<g class="' + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.rx.toFixed(1) + '" ry="4.7"/></g>';
+    }
+    els.mapSphereMarkers.innerHTML = html;
   }
   function clampMapZoom(zoom) {
     return Math.max(mapMinZoom, Math.min(mapMaxZoom, zoom));
@@ -875,8 +878,9 @@
     var dotCls = kind === 'sun' ? 'sphere-dot-sun' : 'sphere-dot-moon';
     var out = sphereSplitPaths(samples, basis, cls, true);
     samples.forEach(function (sample) {
+      if (sample.alt < 0) return; // 地平線下の点は描かない
       var p = sphereProject(sample.vector, basis);
-      var html = '<circle class="' + dotCls + (sample.alt < 0 ? ' sphere-below' : '') + (p.front ? '' : ' sphere-back') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (kind === 'sun' ? '1.8' : '1.6') + '"/>';
+      var html = '<circle class="' + dotCls + (p.front ? '' : ' sphere-back') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (kind === 'sun' ? '1.8' : '1.6') + '"/>';
       if (p.front) out.front += html;
       else out.back += html;
     });
@@ -886,24 +890,41 @@
     var bodies = get3dBodies(date, loc);
     var sun = bodies.sun;
     var moon = bodies.moon;
-    var sp = sphereProject(sun.vector, basis);
-    var mp = sphereProject(moon.vector, basis);
-    els.sphereMarkers.innerHTML =
-      '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
-      '<circle class="sphere-moon-now' + (moon.alt < 0 ? ' sphere-below' : '') + (mp.front ? '' : ' sphere-back') + '" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/>';
+    var html = '';
+    if (sun.alt >= 0) { // 地平線下は描かない
+      var sp = sphereProject(sun.vector, basis);
+      html += '<circle class="sphere-sun-now' + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>';
+    }
+    if (moon.alt >= 0) {
+      var mp = sphereProject(moon.vector, basis);
+      html += '<circle class="sphere-moon-now' + (mp.front ? '' : ' sphere-back') + '" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/>';
+    }
+    els.sphereMarkers.innerHTML = html;
   }
-  function sphereSplitPaths(samples, basis, cls, dimBelow) {
+  // clipBelow=true(太陽・月の軌道)では地平線(z=0)で切り、地平線下(ドームに埋まる部分)は描かない。
+  // grid など clipBelow=false は従来どおり全区間を描く。
+  function sphereSplitPaths(samples, basis, cls, clipBelow) {
     var front = '';
     var back = '';
     for (var i = 0; i < samples.length - 1; i++) {
-      var a = samples[i];
-      var b = samples[i + 1];
-      var pa = sphereProject(a.vector, basis);
-      var pb = sphereProject(b.vector, basis);
+      var va = samples[i].vector;
+      var vb = samples[i + 1].vector;
+      if (clipBelow) {
+        var aUp = va.z >= 0;
+        var bUp = vb.z >= 0;
+        if (!aUp && !bUp) continue; // 両端とも地平線下
+        if (aUp !== bUp) {
+          // z=0(地平線)の交点を線形補間で求め、地平線上側だけ残す
+          var t = va.z / (va.z - vb.z);
+          var vc = normalize({ x: va.x + (vb.x - va.x) * t, y: va.y + (vb.y - va.y) * t, z: 0 });
+          if (aUp) vb = vc; else va = vc;
+        }
+      }
+      var pa = sphereProject(va, basis);
+      var pb = sphereProject(vb, basis);
       var isFront = pa.front && pb.front;
-      var below = dimBelow && (a.alt < 0 || b.alt < 0);
       var d = 'M' + pa.x.toFixed(1) + ' ' + pa.y.toFixed(1) + 'L' + pb.x.toFixed(1) + ' ' + pb.y.toFixed(1);
-      var html = '<path class="' + cls + (below ? ' sphere-below' : '') + (isFront ? '' : ' sphere-back') + '" d="' + d + '"/>';
+      var html = '<path class="' + cls + (isFront ? '' : ' sphere-back') + '" d="' + d + '"/>';
       if (isFront) front += html;
       else back += html;
     }

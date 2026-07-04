@@ -42,9 +42,7 @@ main { max-width: 620px; margin: 0 auto; }
 .sphere-path-moon { fill: none; stroke: var(--moon); stroke-width: 1.4; }
 .sphere-dot-sun { fill: var(--sun); }
 .sphere-dot-moon { fill: var(--moon); }
-.sphere-below { opacity: .3; }
 .sphere-back { opacity: .34; }
-.sphere-back.sphere-below { opacity: .14; }
 .sphere-sun-now { fill: var(--sun); stroke: rgba(255, 255, 255, .72); stroke-width: .8; filter: url(#sphereGlow); }
 .sphere-moon-now { fill: var(--moon); stroke: #a9bcc8; stroke-width: .8; }
 .sphere-observer { fill: var(--accent); stroke: #d8fffa; stroke-width: .8; }
