@@ -31,7 +31,8 @@
       heading: null,
       ready: false,
       delta: null,
-      deltaReady: false
+      deltaReady: false,
+      skyFlip: false
     },
     raf3d: null,
     declination: Number(localStorage.getItem('declination') || '-7.7')
@@ -231,6 +232,8 @@
     }
   }
   function onOrientation(ev) {
+    // 反転判定はこのフレームの renderCompassRotation より前に確定させる(静止時の1フレーム遅延を防ぐ)
+    updateSkyFlip(ev.beta);
     var heading = null;
     if (typeof ev.webkitCompassHeading === 'number') {
       heading = withFlipCorrection(ev.webkitCompassHeading + state.declination, ev.beta);
@@ -366,7 +369,7 @@
     if (state.mode === 'map' && (!map || !map.isMoving())) requestMapRender();
   }
   function renderCompassRotation() {
-    var rot = state.compassOn ? -state.heading : 0;
+    var rot = state.compassOn ? -displayHeading() : 0;
     els.rotatingSky.setAttribute('transform', 'rotate(' + rot.toFixed(1) + ')');
   }
   function drawTicks() {
@@ -718,7 +721,7 @@
   // 天球の視点方位: コンパス連動ONかつ方位取得済みなら端末方位に追従。外部視点では 180+heading にすると
   // 真上から見た回転が2Dコンパス(N方位=−heading=向いた方角が上)と一致する。それ以外はドラッグ値を使う。
   function sphereViewAz() {
-    return (state.compassOn && state.orientation.ready) ? norm360(180 + state.heading) : state.sphere.az;
+    return (state.compassOn && state.orientation.ready) ? norm360(180 + displayHeading()) : state.sphere.az;
   }
   // 外部(俯瞰)視点の正射影。真上から見たとき N上・E右・S下・W左(時計回り)で2Dコンパスと一致する。
   // コンパス連動時の方位は sphereViewAz で 180−heading とし、真上視で2Dと同じ回転になるようにする。
@@ -1157,6 +1160,19 @@
   }
   function angleDiff(a, b) {
     return (a - b + 540) % 360 - 180;
+  }
+  // スマホの背面を空へ向けて(3Dかざしと同じ姿勢で)かざすと beta>90 になり、端末上端基準の
+  // webkitCompassHeading(=state.heading)はかざした視線と逆を向く。この帯域では 2D/天球の表示方位を
+  // 180°反転し、実際に見上げている方角と一致させる。境界の符号ちらつき防止に 80〜100°のヒステリシス。
+  // (3Dかざしは回転行列で背面視線 forward 基準に処理済みのため反転対象外)
+  function updateSkyFlip(beta) {
+    if (typeof beta !== 'number') return;
+    if (beta > 100) state.orientation.skyFlip = true;
+    else if (beta < 80) state.orientation.skyFlip = false;
+  }
+  // 2Dコンパス・天球モードの表示に使う方位。空へ向けた帯域では 180°反転する。state.heading 本体は不変。
+  function displayHeading() {
+    return state.orientation.skyFlip ? norm360(state.heading + 180) : state.heading;
   }
   // iOSコンパスは姿勢の帯域によって基準軸(上端射影/背面射影)が切り替わり、値が180°入れ替わる。
   // 0/180°のどちらが正しいかは平滑方位への連続性で選ぶ。初期化だけは取り違えが起きない
