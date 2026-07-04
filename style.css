@@ -58,6 +58,7 @@ main { max-width: 620px; margin: 0 auto; }
 .map-view.tilted .map-sky { opacity: 1; }
 .map-tiles { position: absolute; inset: 0; background: #d8ddd9; transform-origin: 50% 50%; z-index: 1; }
 .map-tiles img { position: absolute; width: 256px; height: 256px; max-width: none; background: #d8ddd9; }
+.map-tiles img.tile-shade { opacity: .55; mix-blend-mode: multiply; background: none; }
 .map-tiles img.missing { opacity: 0; }
 .map-fog { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(216, 221, 217, .88) 0%, rgba(216, 221, 217, .54) 26%, rgba(216, 221, 217, 0) 58%); opacity: 0; pointer-events: none; transition: opacity .12s linear; z-index: 2; }
 .map-view.tilted .map-fog { opacity: var(--map-fog-opacity, .6); }

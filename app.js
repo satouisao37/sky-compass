@@ -10,6 +10,9 @@
   var mapMaxTilt = 55;
   var mapMaxTiles = 200;
   var mapPerspectiveRatio = 1.45;
+  var mapTileUrl = 'https://cyberjapandata.gsi.go.jp/xyz/std/'; // 標準地図(路線・道路・地名が明瞭)
+  var mapShadeUrl = 'https://cyberjapandata.gsi.go.jp/xyz/hillshademap/'; // 陰影起伏図(地形の凹凸)
+  var mapShadeMaxZoom = 16; // 陰影起伏図の提供上限ズーム
   var state = {
     loc: loadLoc(),
     selectedDate: new Date(),
@@ -634,17 +637,23 @@
     els.mapTiles.innerHTML = '';
     for (var x = x1; x <= x2; x++) {
       for (var y = y1; y <= y2; y++) {
-        var img = document.createElement('img');
         var tx = ((x % max) + max) % max;
-        img.alt = '';
-        img.draggable = false;
-        img.src = 'https://cyberjapandata.gsi.go.jp/xyz/pale/' + z + '/' + tx + '/' + y + '.png';
-        img.style.left = (x * 256) + 'px';
-        img.style.top = (y * 256) + 'px';
-        img.onerror = function () { this.classList.add('missing'); };
-        els.mapTiles.appendChild(img);
+        appendMapTile(mapTileUrl, z, tx, x, y, '');
+        // 陰影起伏を multiply で重ねて Google マップ地形風の起伏を出す(提供ズーム内のみ)
+        if (z <= mapShadeMaxZoom) appendMapTile(mapShadeUrl, z, tx, x, y, 'tile-shade');
       }
     }
+  }
+  function appendMapTile(base, z, tx, x, y, cls) {
+    var img = document.createElement('img');
+    img.alt = '';
+    img.draggable = false;
+    if (cls) img.className = cls;
+    img.src = base + z + '/' + tx + '/' + y + '.png';
+    img.style.left = (x * 256) + 'px';
+    img.style.top = (y * 256) + 'px';
+    img.onerror = function () { this.classList.add('missing'); };
+    els.mapTiles.appendChild(img);
   }
   function renderMapOverlay(rect, center) {
     var pos = mapScreenPoint(state.map.selected, rect, center);
