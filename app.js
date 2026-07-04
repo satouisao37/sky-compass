@@ -16,6 +16,7 @@
       lastY: 0,
       raf: null
     },
+    map: loadMapState(),
     compassOn: false,
     orientation: {
       alpha: null,
@@ -41,15 +42,18 @@
   var ref3dSize = '';
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
+  var mapRendered = { tiles: '', daily: '' };
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapTiles','mapMarker','mapSphereSvg','mapTicks','mapSunPath','mapMoonPath','mapSunMarker','mapMoonMarker','mapZoomIn','mapZoomOut','mapRadiusInput','mapInfo','mapUseBtn','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
+    els.mapTicks.innerHTML = els.ticks.innerHTML;
     buildRef3d();
+    initMapState();
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
     els.lonInput.value = state.loc.lon.toFixed(4);
@@ -85,7 +89,9 @@
     els.mode2dBtn.addEventListener('click', function () { setMode('2d'); });
     els.mode3dBtn.addEventListener('click', function () { setMode('3d'); });
     els.modeSphereBtn.addEventListener('click', function () { setMode('sphere'); });
+    els.modeMapBtn.addEventListener('click', function () { setMode('map'); });
     bindSphereDrag();
+    bindMapEvents();
   }
   function loadLoc() {
     try {
@@ -99,6 +105,54 @@
       localStorage.setItem('lastLocation', JSON.stringify(loc));
     } catch (e) {}
   }
+  function loadMapState() {
+    var fallback = { lat: Tokyo.lat, lon: Tokyo.lon };
+    var out = {
+      center: { lat: fallback.lat, lon: fallback.lon },
+      selected: { lat: fallback.lat, lon: fallback.lon },
+      zoom: 12,
+      radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
+      pointers: {},
+      drag: null,
+      pinch: null
+    };
+    try {
+      var saved = JSON.parse(localStorage.getItem('mapView') || 'null');
+      if (saved) {
+        if (saved.center && validLoc(saved.center)) out.center = { lat: saved.center.lat, lon: saved.center.lon };
+        if (saved.selected && validLoc(saved.selected)) out.selected = { lat: saved.selected.lat, lon: saved.selected.lon };
+        if (isFinite(saved.zoom)) out.zoom = Math.max(4, Math.min(17, Math.round(saved.zoom)));
+      }
+    } catch (e) {}
+    out.radius = Math.max(40, Math.min(160, Math.round(out.radius || 90)));
+    return out;
+  }
+  function initMapState() {
+    var saved = false;
+    try { saved = !!localStorage.getItem('mapView'); } catch (e) {}
+    if (!saved) {
+      state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
+      state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+      state.map.zoom = 12;
+    }
+    els.mapRadiusInput.value = String(state.map.radius);
+  }
+  function validLoc(loc) {
+    return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -85.05112878 && loc.lat <= 85.05112878 && loc.lon >= -180 && loc.lon <= 180;
+  }
+  function saveMapState() {
+    try {
+      localStorage.setItem('mapSphereRadius', String(state.map.radius));
+      localStorage.setItem('mapView', JSON.stringify({
+        center: state.map.center,
+        selected: state.map.selected,
+        zoom: state.map.zoom
+      }));
+    } catch (e) {}
+  }
+  function hasSavedMapView() {
+    try { return !!localStorage.getItem('mapView'); } catch (e) { return false; }
+  }
   function locate(fromTap) {
     if (!navigator.geolocation) {
       els.placeLabel.textContent = '位置情報が使えません。座標を手入力してください';
@@ -107,6 +161,12 @@
     navigator.geolocation.getCurrentPosition(function (pos) {
       state.loc = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
       saveLoc(state.loc);
+      if (!hasSavedMapView()) {
+        state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
+        state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+        mapRendered.daily = '';
+        mapRendered.tiles = '';
+      }
       els.latInput.value = state.loc.lat.toFixed(4);
       els.lonInput.value = state.loc.lon.toFixed(4);
       render();
@@ -185,16 +245,21 @@
     els.mode2dBtn.classList.toggle('active', mode === '2d');
     els.mode3dBtn.classList.toggle('active', mode === '3d');
     els.modeSphereBtn.classList.toggle('active', mode === 'sphere');
+    els.modeMapBtn.classList.toggle('active', mode === 'map');
     els.mode2dBtn.setAttribute('aria-pressed', mode === '2d' ? 'true' : 'false');
     els.mode3dBtn.setAttribute('aria-pressed', mode === '3d' ? 'true' : 'false');
     els.modeSphereBtn.setAttribute('aria-pressed', mode === 'sphere' ? 'true' : 'false');
+    els.modeMapBtn.setAttribute('aria-pressed', mode === 'map' ? 'true' : 'false');
     els.skySvg.classList.toggle('hidden', mode !== '2d');
     els.sky3d.hidden = mode !== '3d';
     els.sphereSvg.classList.toggle('hidden', mode !== 'sphere');
+    els.mapView.classList.toggle('hidden', mode !== 'map');
     els.belowLabel.hidden = mode !== '2d';
+    els.compassBtn.parentElement.hidden = mode === 'map';
     if (mode === '3d') start3dLoop();
     else stop3dLoop();
     if (mode === 'sphere') renderSphere();
+    if (mode === 'map') renderMap();
   }
   function ymd(date) {
     return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
@@ -260,6 +325,7 @@
     renderCompassRotation();
     if (state.mode === '3d') request3dRender();
     if (state.mode === 'sphere') requestSphereRender();
+    if (state.mode === 'map') renderMap();
   }
   function renderCompassRotation() {
     var rot = state.compassOn ? -state.heading : 0;
@@ -337,6 +403,230 @@
     var r = (90 - alt) / 90 * 100;
     if (pos.alt < 0) r = 104;
     return polar(pos.az, r);
+  }
+  function bindMapEvents() {
+    els.mapZoomIn.addEventListener('click', function () { zoomMapAtCenter(1); });
+    els.mapZoomOut.addEventListener('click', function () { zoomMapAtCenter(-1); });
+    els.mapRadiusInput.addEventListener('input', function () {
+      state.map.radius = Math.max(40, Math.min(160, Number(els.mapRadiusInput.value) || 90));
+      saveMapState();
+      renderMap();
+    });
+    els.mapUseBtn.addEventListener('click', function () {
+      state.loc = { lat: state.map.selected.lat, lon: state.map.selected.lon, acc: null };
+      saveLoc(state.loc);
+      els.latInput.value = state.loc.lat.toFixed(4);
+      els.lonInput.value = state.loc.lon.toFixed(4);
+      render();
+    });
+    els.mapView.addEventListener('pointerdown', mapPointerDown);
+    els.mapView.addEventListener('pointermove', mapPointerMove);
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (type) {
+      els.mapView.addEventListener(type, mapPointerUp);
+    });
+    window.addEventListener('resize', function () { if (state.mode === 'map') { mapRendered.tiles = ''; renderMap(); } });
+  }
+  function mapPointerDown(ev) {
+    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target === els.mapUseBtn) return;
+    ev.preventDefault();
+    els.mapView.setPointerCapture(ev.pointerId);
+    state.map.pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, startX: ev.clientX, startY: ev.clientY };
+    var ids = mapPointerIds();
+    if (ids.length === 1) {
+      state.map.drag = {
+        pointerId: ev.pointerId,
+        centerPx: locToWorld(state.map.center, state.map.zoom),
+        moved: false
+      };
+      state.map.pinch = null;
+    } else if (ids.length === 2) {
+      beginMapPinch(ids);
+    }
+  }
+  function mapPointerMove(ev) {
+    var p = state.map.pointers[ev.pointerId];
+    if (!p) return;
+    p.x = ev.clientX;
+    p.y = ev.clientY;
+    var ids = mapPointerIds();
+    if (ids.length >= 2 && state.map.pinch) {
+      updateMapPinch(ids);
+      return;
+    }
+    if (!state.map.drag || ev.pointerId !== state.map.drag.pointerId) return;
+    var dx = ev.clientX - p.startX;
+    var dy = ev.clientY - p.startY;
+    if (Math.sqrt(dx * dx + dy * dy) > 8) state.map.drag.moved = true;
+    var next = {
+      x: state.map.drag.centerPx.x - dx,
+      y: state.map.drag.centerPx.y - dy
+    };
+    state.map.center = worldToLoc(next, state.map.zoom);
+    saveMapState();
+    renderMap();
+  }
+  function mapPointerUp(ev) {
+    var p = state.map.pointers[ev.pointerId];
+    var wasPinch = !!state.map.pinch;
+    delete state.map.pointers[ev.pointerId];
+    try {
+      if (els.mapView.hasPointerCapture(ev.pointerId)) els.mapView.releasePointerCapture(ev.pointerId);
+    } catch (e) {}
+    if (p && state.map.drag && ev.pointerId === state.map.drag.pointerId && !state.map.drag.moved && !wasPinch) {
+      var dx = ev.clientX - p.startX;
+      var dy = ev.clientY - p.startY;
+      if (Math.sqrt(dx * dx + dy * dy) < 8) {
+        state.map.selected = clientToMapLoc(ev.clientX, ev.clientY);
+        saveMapState();
+        mapRendered.daily = '';
+        renderMap();
+      }
+    }
+    var ids = mapPointerIds();
+    state.map.drag = null;
+    if (ids.length === 2) beginMapPinch(ids);
+    else state.map.pinch = null;
+  }
+  function mapPointerIds() {
+    return Object.keys(state.map.pointers);
+  }
+  function beginMapPinch(ids) {
+    var a = state.map.pointers[ids[0]];
+    var b = state.map.pointers[ids[1]];
+    state.map.pinch = {
+      dist: mapDist(a, b),
+      midX: (a.x + b.x) / 2,
+      midY: (a.y + b.y) / 2
+    };
+    state.map.drag = null;
+  }
+  function updateMapPinch(ids) {
+    var a = state.map.pointers[ids[0]];
+    var b = state.map.pointers[ids[1]];
+    var dist = mapDist(a, b);
+    if (!state.map.pinch || !dist) return;
+    var ratio = dist / state.map.pinch.dist;
+    if (ratio > 1.25) {
+      zoomMapAt(state.map.pinch.midX, state.map.pinch.midY, state.map.zoom + 1);
+      beginMapPinch(ids);
+    } else if (ratio < .8) {
+      zoomMapAt(state.map.pinch.midX, state.map.pinch.midY, state.map.zoom - 1);
+      beginMapPinch(ids);
+    }
+  }
+  function mapDist(a, b) {
+    var dx = a.x - b.x;
+    var dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function zoomMapAtCenter(delta) {
+    var rect = els.mapView.getBoundingClientRect();
+    zoomMapAt(rect.left + rect.width / 2, rect.top + rect.height / 2, state.map.zoom + delta);
+  }
+  function zoomMapAt(clientX, clientY, zoom) {
+    zoom = Math.max(4, Math.min(17, Math.round(zoom)));
+    if (zoom === state.map.zoom) return;
+    var anchor = clientToMapLoc(clientX, clientY);
+    var rect = els.mapView.getBoundingClientRect();
+    var anchorPx = locToWorld(anchor, zoom);
+    var cx = clientX - rect.left;
+    var cy = clientY - rect.top;
+    state.map.zoom = zoom;
+    state.map.center = worldToLoc({ x: anchorPx.x - cx + rect.width / 2, y: anchorPx.y - cy + rect.height / 2 }, zoom);
+    mapRendered.tiles = '';
+    saveMapState();
+    renderMap();
+  }
+  function clientToMapLoc(clientX, clientY) {
+    var rect = els.mapView.getBoundingClientRect();
+    var center = locToWorld(state.map.center, state.map.zoom);
+    return worldToLoc({
+      x: center.x - rect.width / 2 + (clientX - rect.left),
+      y: center.y - rect.height / 2 + (clientY - rect.top)
+    }, state.map.zoom);
+  }
+  function renderMap() {
+    if (state.mode !== 'map') return;
+    var rect = els.mapView.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    renderMapTiles(rect);
+    renderMapOverlay(rect);
+  }
+  function renderMapTiles(rect) {
+    var z = state.map.zoom;
+    var center = locToWorld(state.map.center, z);
+    var left = center.x - rect.width / 2;
+    var top = center.y - rect.height / 2;
+    var max = Math.pow(2, z);
+    var x1 = Math.floor(left / 256) - 1;
+    var x2 = Math.floor((left + rect.width) / 256) + 1;
+    var y1 = Math.max(0, Math.floor(top / 256) - 1);
+    var y2 = Math.min(max - 1, Math.floor((top + rect.height) / 256) + 1);
+    els.mapTiles.style.transform = 'translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
+    var key = [z, x1, x2, y1, y2, Math.round(rect.width), Math.round(rect.height)].join('|');
+    if (mapRendered.tiles === key) return;
+    mapRendered.tiles = key;
+    els.mapTiles.innerHTML = '';
+    for (var x = x1; x <= x2; x++) {
+      for (var y = y1; y <= y2; y++) {
+        var img = document.createElement('img');
+        var tx = ((x % max) + max) % max;
+        img.alt = '';
+        img.draggable = false;
+        img.src = 'https://cyberjapandata.gsi.go.jp/xyz/pale/' + z + '/' + tx + '/' + y + '.png';
+        img.style.left = (x * 256) + 'px';
+        img.style.top = (y * 256) + 'px';
+        img.onerror = function () { this.classList.add('missing'); };
+        els.mapTiles.appendChild(img);
+      }
+    }
+  }
+  function renderMapOverlay(rect) {
+    var pos = mapScreenPoint(state.map.selected, rect);
+    var r = state.map.radius;
+    els.mapMarker.style.transform = 'translate(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px)';
+    els.mapSphereSvg.style.width = (r * 2) + 'px';
+    els.mapSphereSvg.style.height = (r * 2) + 'px';
+    els.mapSphereSvg.style.transform = 'translate(' + (pos.x - r).toFixed(1) + 'px,' + (pos.y - r).toFixed(1) + 'px)';
+    var date = state.selectedDate;
+    var tz = -date.getTimezoneOffset();
+    var p = ymd(date);
+    var daily = getDaily(p, state.map.selected, tz);
+    if (mapRendered.daily !== daily.key) {
+      els.mapSunPath.innerHTML = daily.sunPath;
+      els.mapMoonPath.innerHTML = daily.moonPath;
+      mapRendered.daily = daily.key;
+    }
+    var sun = Astro.sunPosition(date, state.map.selected.lat, state.map.selected.lon);
+    var moon = Astro.moonPosition(date, state.map.selected.lat, state.map.selected.lon);
+    var illum = Astro.moonIllumination(date);
+    drawBody(els.mapSunMarker, sun, 'sun', illum);
+    drawBody(els.mapMoonMarker, moon, 'moon', illum);
+    els.mapInfo.textContent = state.map.selected.lat.toFixed(5) + ', ' + state.map.selected.lon.toFixed(5) +
+      ' / 太陽 ' + degDir(sun.az) + ' 高度 ' + sun.alt.toFixed(1) + '度' +
+      ' / 月 ' + degDir(moon.az) + ' 高度 ' + moon.alt.toFixed(1) + '度';
+  }
+  function mapScreenPoint(loc, rect) {
+    var center = locToWorld(state.map.center, state.map.zoom);
+    var p = locToWorld(loc, state.map.zoom);
+    return { x: p.x - center.x + rect.width / 2, y: p.y - center.y + rect.height / 2 };
+  }
+  function locToWorld(loc, z) {
+    var lat = Math.max(-85.05112878, Math.min(85.05112878, loc.lat));
+    var sin = Math.sin(lat * Math.PI / 180);
+    var scale = 256 * Math.pow(2, z);
+    return {
+      x: (loc.lon + 180) / 360 * scale,
+      y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale
+    };
+  }
+  function worldToLoc(p, z) {
+    var scale = 256 * Math.pow(2, z);
+    var lon = p.x / scale * 360 - 180;
+    var n = Math.PI - 2 * Math.PI * p.y / scale;
+    var lat = Math.atan(Math.sinh(n)) * 180 / Math.PI;
+    lon = ((lon + 540) % 360) - 180;
+    return { lat: Math.max(-85.05112878, Math.min(85.05112878, lat)), lon: lon };
   }
   function bindSphereDrag() {
     els.sphereSvg.addEventListener('pointerdown', function (ev) {

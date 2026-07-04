@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_VERSION = 'sky-compass-v17';
+var CACHE_VERSION = 'sky-compass-v18';
 var ASSETS = [
   '.',
   'index.html',
@@ -31,6 +31,8 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   if (event.request.method !== 'GET') return;
+  var url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
   // stale-while-revalidate: キャッシュを即返しつつ裏で再取得して次回起動時に最新化する(圏外ではキャッシュのみで動作)
   event.respondWith(caches.match(event.request).then(function (cached) {
     var refresh = fetch(event.request).then(function (response) {
