@@ -55,6 +55,7 @@ main { max-width: 620px; margin: 0 auto; }
 .map-view { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #d8ddd9; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .map-view.hidden { display: none; }
 .map-canvas { position: absolute; inset: 0; }
+#mapView > .map-marker, #mapView > .map-sphere-marker { display: none; }
 .map-marker { width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; }
 .map-sphere-marker { display: block; pointer-events: none; }
 .map-sphere { display: block; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .48); box-shadow: 0 0 0 1px rgba(16, 20, 24, .75), 0 8px 22px rgba(0, 0, 0, .28); pointer-events: none; }
@@ -81,7 +82,6 @@ main { max-width: 620px; margin: 0 auto; }
 .sun-disc { fill: var(--sun); filter: url(#softGlow); }
 .moon-disc { fill: var(--moon); stroke: #a9bcc8; stroke-width: .6; }
 .moon-shadow { fill: #303b43; opacity: .9; }
-.map-sphere .sun-disc { filter: url(#mapGlow); }
 .below { opacity: .35; }
 .below-label { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; }
 .sky-3d { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: radial-gradient(circle at 50% 38%, #22303a 0, #121b22 58%, #0d1317 100%); }

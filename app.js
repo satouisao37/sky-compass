@@ -52,6 +52,7 @@
   var map = null;
   var mapSelectedMarker = null;
   var mapSphereMarker = null;
+  var mapSaveTimer = null;
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
@@ -89,7 +90,15 @@
     els.timeSlider.addEventListener('input', function () { state.manual = true; applyDateAndSlider(); });
     els.declinationInput.addEventListener('change', function () { state.declination = Number(els.declinationInput.value || 0); localStorage.setItem('declination', String(state.declination)); render(); });
     els.applyLocBtn.addEventListener('click', function () {
-      state.loc = { lat: Number(els.latInput.value), lon: Number(els.lonInput.value), acc: null };
+      var lat = Number(els.latInput.value);
+      var lon = Number(els.lonInput.value);
+      state.loc = {
+        lat: isFinite(lat) ? clampLat(lat) : state.loc.lat,
+        lon: isFinite(lon) ? clampLon(lon) : state.loc.lon,
+        acc: null
+      };
+      els.latInput.value = state.loc.lat.toFixed(4);
+      els.lonInput.value = state.loc.lon.toFixed(4);
       saveLoc(state.loc);
       render();
     });
@@ -104,7 +113,7 @@
   function loadLoc() {
     try {
       var saved = JSON.parse(localStorage.getItem('lastLocation') || 'null');
-      if (saved && isFinite(saved.lat) && isFinite(saved.lon)) return saved;
+      if (saved && isFinite(saved.lat) && isFinite(saved.lon)) return sanitizeLoc(saved, Tokyo, false);
     } catch (e) {}
     return Tokyo;
   }
@@ -150,19 +159,26 @@
     try {
       localStorage.setItem('mapSphereRadius', String(state.map.radius));
       localStorage.setItem('mapView', JSON.stringify({
-        center: state.map.center,
-        selected: state.map.selected,
+        center: sanitizeLoc(state.map.center, Tokyo, true),
+        selected: sanitizeLoc(state.map.selected, state.map.center, true),
         zoom: state.map.zoom,
         tilt: state.map.tilt
       }));
     } catch (e) {}
   }
+  function scheduleSaveMapState() {
+    if (mapSaveTimer) clearTimeout(mapSaveTimer);
+    mapSaveTimer = setTimeout(function () {
+      mapSaveTimer = null;
+      saveMapState();
+    }, 300);
+  }
   function hasSavedMapView() {
     try { return !!localStorage.getItem('mapView'); } catch (e) { return false; }
   }
   function resetMapToLoc() {
-    state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
-    state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+    state.map.center = sanitizeLoc(state.loc, Tokyo, false);
+    state.map.selected = sanitizeLoc(state.loc, Tokyo, false);
     state.map.zoom = 12;
     state.map.tilt = 0;
     mapRendered.daily = '';
@@ -430,16 +446,20 @@
     els.mapZoomOut.addEventListener('click', function () { ensureMap(); if (map) map.zoomOut(); });
     els.mapRadiusInput.addEventListener('input', function () {
       state.map.radius = clampMapRadius(Number(els.mapRadiusInput.value) || 90);
-      saveMapState();
+      scheduleSaveMapState();
       requestMapRender();
     });
     els.mapTiltInput.addEventListener('input', function () {
       state.map.tilt = clampMapTilt(Number(els.mapTiltInput.value) || 0);
       mapRendered.view = '';
       ensureMap();
-      if (map) map.setPitch(state.map.tilt);
-      saveMapState();
-      requestMapRender();
+      if (map) {
+        map.setPitch(state.map.tilt);
+        scheduleSaveMapState();
+      } else {
+        scheduleSaveMapState();
+        requestMapRender();
+      }
     });
     els.mapUseBtn.addEventListener('click', function () {
       state.loc = { lat: state.map.selected.lat, lon: state.map.selected.lon, acc: null };
@@ -456,6 +476,8 @@
   }
   function ensureMap() {
     if (map || !window.maplibregl) return;
+    state.map.center = sanitizeLoc(state.map.center, Tokyo, true);
+    state.map.selected = sanitizeLoc(state.map.selected, state.map.center, true);
     map = new maplibregl.Map({
       container: els.mapCanvas,
       style: mapStyleUrl,
@@ -469,29 +491,20 @@
       pitchWithRotate: false
     });
     map.touchZoomRotate.disableRotation();
-    mapSelectedMarker = new maplibregl.Marker({
-      element: els.mapMarker,
-      anchor: 'center',
-      pitchAlignment: 'viewport',
-      rotationAlignment: 'viewport'
-    }).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
-    mapSphereMarker = new maplibregl.Marker({
-      element: els.mapSphereMarker,
-      anchor: 'center',
-      pitchAlignment: 'viewport',
-      rotationAlignment: 'viewport'
-    }).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
+    map.keyboard.disableRotation();
+    mapSelectedMarker = makeViewportMarker(els.mapMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
+    mapSphereMarker = makeViewportMarker(els.mapSphereMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
     map.on('click', function (ev) {
-      state.map.selected = { lat: ev.lngLat.lat, lon: ev.lngLat.lng };
+      state.map.selected = { lat: clampLat(ev.lngLat.lat), lon: wrapLon(ev.lngLat.lng) };
       mapRendered.daily = '';
       mapRendered.marker = '';
       syncMapMarkers();
-      saveMapState();
+      scheduleSaveMapState();
       requestMapRender();
     });
     map.on('moveend', function () {
       syncMapStateFromCamera(false);
-      saveMapState();
+      scheduleSaveMapState();
     });
     map.on('pitch', function () {
       syncMapStateFromCamera(true);
@@ -499,14 +512,22 @@
     });
     map.on('pitchend', function () {
       syncMapStateFromCamera(true);
-      saveMapState();
+      scheduleSaveMapState();
     });
     map.on('load', requestMapRender);
+  }
+  function makeViewportMarker(element) {
+    return new maplibregl.Marker({
+      element: element,
+      anchor: 'center',
+      pitchAlignment: 'viewport',
+      rotationAlignment: 'viewport'
+    });
   }
   function syncMapStateFromCamera(syncTiltInput) {
     if (!map) return;
     var center = map.getCenter();
-    state.map.center = { lat: center.lat, lon: center.lng };
+    state.map.center = { lat: clampLat(center.lat), lon: wrapLon(center.lng) };
     state.map.zoom = map.getZoom();
     state.map.tilt = clampMapTilt(map.getPitch());
     if (syncTiltInput) els.mapTiltInput.value = String(Math.round(state.map.tilt));
@@ -547,14 +568,19 @@
     var p = ymd(date);
     var daily = getDaily(p, state.map.selected, tz);
     var basis = mapSphereBasis();
-    var viewKey = state.map.tilt.toFixed(2);
+    var viewKey = String(Math.round(state.map.tilt));
     if (mapRendered.view !== viewKey) renderMapSphereGrid(basis);
     if (mapRendered.view !== viewKey || mapRendered.daily !== daily.key) renderMapSpherePaths(daily, basis);
     var markerKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5), viewKey].join('|');
+    if (mapRendered.marker === markerKey) {
+      mapRendered.view = viewKey;
+      mapRendered.daily = daily.key;
+      return;
+    }
     var sun = Astro.sunPosition(date, state.map.selected.lat, state.map.selected.lon);
     var moon = Astro.moonPosition(date, state.map.selected.lat, state.map.selected.lon);
     var illum = Astro.moonIllumination(date);
-    if (mapRendered.marker !== markerKey) renderMapSphereMarkers(sun, moon, illum, basis);
+    renderMapSphereMarkers(sun, moon, illum, basis);
     els.mapInfo.textContent = state.map.selected.lat.toFixed(5) + ', ' + state.map.selected.lon.toFixed(5) +
       ' / 太陽 ' + degDir(sun.az) + ' 高度 ' + sun.alt.toFixed(1) + '度' +
       ' / 月 ' + degDir(moon.az) + ' 高度 ' + moon.alt.toFixed(1) + '度';
@@ -593,6 +619,21 @@
   }
   function clampMapTilt(tilt) {
     return Math.max(0, Math.min(mapMaxTilt, tilt));
+  }
+  function clampLat(lat) {
+    return Math.max(-90, Math.min(90, lat));
+  }
+  function clampLon(lon) {
+    return Math.max(-180, Math.min(180, lon));
+  }
+  function wrapLon(lon) {
+    return ((lon + 540) % 360) - 180;
+  }
+  function sanitizeLoc(loc, fallback, wrap) {
+    fallback = fallback || Tokyo;
+    var lat = loc && isFinite(loc.lat) ? loc.lat : fallback.lat;
+    var lon = loc && isFinite(loc.lon) ? loc.lon : fallback.lon;
+    return { lat: clampLat(lat), lon: wrap ? wrapLon(lon) : clampLon(lon) };
   }
   function bindSphereDrag() {
     els.sphereSvg.addEventListener('pointerdown', function (ev) {
