@@ -53,6 +53,7 @@
   var mapSelectedMarker = null;
   var mapSphereMarker = null;
   var mapSaveTimer = null;
+  var mapInitFailed = false;
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
@@ -475,9 +476,20 @@
     };
   }
   function ensureMap() {
-    if (map || !window.maplibregl) return;
+    if (map || mapInitFailed || !window.maplibregl) return;
     state.map.center = sanitizeLoc(state.map.center, Tokyo, true);
     state.map.selected = sanitizeLoc(state.map.selected, state.map.center, true);
+    try {
+      createMap();
+    } catch (e) {
+      // WebGL が使えない環境では Map 生成が投げる。毎フレーム再試行して例外を吐き続けないよう一度で諦める
+      mapInitFailed = true;
+      if (map) { try { map.remove(); } catch (e2) {} }
+      map = null;
+      els.mapInfo.textContent = 'この端末では地図を表示できません(WebGL が無効です)';
+    }
+  }
+  function createMap() {
     map = new maplibregl.Map({
       container: els.mapCanvas,
       style: mapStyleUrl,
@@ -559,6 +571,7 @@
     renderMapOverlay();
   }
   function renderMapOverlay() {
+    if (mapInitFailed) return; // 失敗メッセージを毎秒の再描画で上書きしない
     var r = state.map.radius;
     els.mapSphereSvg.style.width = (r * 2) + 'px';
     els.mapSphereSvg.style.height = (r * 2) + 'px';
