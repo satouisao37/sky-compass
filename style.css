@@ -59,7 +59,7 @@ main { max-width: 620px; margin: 0 auto; }
 /* Marker は毎フレーム transform されるため合成レイヤに昇格させる(Safari の再ラスタライズによるカクつき対策) */
 .map-marker { width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; will-change: transform; }
 .map-sphere-marker { display: block; pointer-events: none; will-change: transform; }
-.map-sphere { display: block; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .48); box-shadow: 0 0 0 1px rgba(16, 20, 24, .75), 0 8px 22px rgba(0, 0, 0, .28); pointer-events: none; }
+.map-sphere { display: block; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .48); box-shadow: 0 0 0 1px rgba(16, 20, 24, .75), 0 8px 22px rgba(0, 0, 0, .28); pointer-events: none; transform-origin: 50% 50%; will-change: transform; }
 .map-sphere .sphere-ground { fill: rgba(17, 25, 32, .34); }
 .map-sphere .sphere-rim { stroke: rgba(237, 244, 247, .58); }
 .map-sphere .sphere-horizon { stroke: rgba(237, 244, 247, .78); }
@@ -67,9 +67,9 @@ main { max-width: 620px; margin: 0 auto; }
 .map-controls { position: absolute; right: 10px; top: 10px; display: grid; gap: 6px; z-index: 5; }
 .map-controls button { width: 38px; height: 38px; padding: 0; border-radius: 8px; background: rgba(15, 21, 25, .9); font-size: 20px; line-height: 1; }
 .map-sliders { position: absolute; left: 10px; top: 10px; width: 168px; display: grid; gap: 4px; padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .45); border-radius: 8px; background: rgba(15, 21, 25, .85); z-index: 5; }
-.map-radius-label, .map-tilt-label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
-.map-radius-label span, .map-tilt-label span { flex: 0 0 28px; }
-.map-radius-label input, .map-tilt-label input { flex: 1 1 auto; min-width: 0; }
+.map-radius-label, .map-tilt-label, .map-bearing-label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
+.map-radius-label span, .map-tilt-label span, .map-bearing-label span { flex: 0 0 28px; }
+.map-radius-label input, .map-tilt-label input, .map-bearing-label input { flex: 1 1 auto; min-width: 0; }
 .map-info { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .38); border-radius: 8px; background: rgba(15, 21, 25, .88); color: var(--text); font-size: 11px; line-height: 1.4; z-index: 5; }
 .horizon { fill: #111920; stroke: var(--line); stroke-width: 1.5; }
 .tick { stroke: #52616b; stroke-width: .7; }

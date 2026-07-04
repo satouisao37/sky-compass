@@ -62,7 +62,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -134,6 +134,7 @@
       zoom: 12,
       radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
       tilt: 0,
+      bearing: 0,
       raf: null
     };
     try {
@@ -143,10 +144,12 @@
         if (saved.selected && validLoc(saved.selected)) out.selected = { lat: saved.selected.lat, lon: saved.selected.lon };
         if (isFinite(saved.zoom)) out.zoom = clampMapZoom(saved.zoom);
         if (isFinite(saved.tilt)) out.tilt = clampMapTilt(saved.tilt);
+        if (isFinite(saved.bearing)) out.bearing = clampMapBearing(saved.bearing);
       }
     } catch (e) {}
     out.radius = clampMapRadius(out.radius || 90);
     out.tilt = clampMapTilt(out.tilt || 0);
+    out.bearing = clampMapBearing(out.bearing || 0);
     return out;
   }
   function initMapState() {
@@ -155,6 +158,7 @@
     if (!saved) resetMapToLoc();
     els.mapRadiusInput.value = String(state.map.radius);
     els.mapTiltInput.value = String(Math.round(state.map.tilt));
+    els.mapBearingInput.value = String(Math.round(state.map.bearing));
   }
   function validLoc(loc) {
     return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -90 && loc.lat <= 90 && loc.lon >= -180 && loc.lon <= 180;
@@ -166,7 +170,8 @@
         center: sanitizeLoc(state.map.center, Tokyo, true),
         selected: sanitizeLoc(state.map.selected, state.map.center, true),
         zoom: state.map.zoom,
-        tilt: state.map.tilt
+        tilt: state.map.tilt,
+        bearing: state.map.bearing
       }));
     } catch (e) {}
   }
@@ -185,6 +190,7 @@
     state.map.selected = sanitizeLoc(state.loc, Tokyo, false);
     state.map.zoom = 12;
     state.map.tilt = 0;
+    state.map.bearing = 0;
     mapRendered.daily = '';
     mapRendered.marker = '';
     mapRendered.view = '';
@@ -469,6 +475,18 @@
         requestMapRender();
       }
     });
+    els.mapBearingInput.addEventListener('input', function () {
+      state.map.bearing = clampMapBearing(Number(els.mapBearingInput.value) || 0);
+      mapRendered.view = '';
+      ensureMap();
+      if (map) {
+        map.setBearing(state.map.bearing);
+        scheduleSaveMapState();
+      } else {
+        scheduleSaveMapState();
+        requestMapRender();
+      }
+    });
     window.addEventListener('resize', function () { if (state.mode === 'map' && map) map.resize(); });
     // CDP実動検証用
     window.__mapDebug = function () {
@@ -496,6 +514,7 @@
       center: [state.map.center.lon, state.map.center.lat],
       zoom: state.map.zoom,
       pitch: state.map.tilt,
+      bearing: state.map.bearing,
       minZoom: mapMinZoom,
       maxZoom: mapMaxZoom,
       maxPitch: mapMaxTilt,
@@ -526,6 +545,16 @@
       syncMapStateFromCamera(true);
       scheduleSaveMapState();
     });
+    map.on('rotate', function () {
+      syncMapStateFromCamera(true);
+      requestMapRender();
+    });
+    map.on('rotateend', function () {
+      syncMapStateFromCamera(true);
+      scheduleSaveMapState();
+    });
+    // ズームに追従して天球ドームの表示倍率を更新(地上サイズを一定に見せる)
+    map.on('zoom', updateMapSphereScale);
     map.on('load', function () {
       // 建物の立体表示(liberty 同梱の building-3d)を z13 から出す(既定 minzoom:14 では既定ズームで見えない)
       try {
@@ -542,16 +571,19 @@
       rotationAlignment: 'viewport'
     });
   }
-  function syncMapStateFromCamera(syncTiltInput) {
+  function syncMapStateFromCamera(syncInputs) {
     if (!map) return;
     var center = map.getCenter();
     state.map.center = { lat: clampLat(center.lat), lon: wrapLon(center.lng) };
     state.map.zoom = map.getZoom();
     state.map.tilt = clampMapTilt(map.getPitch());
-    if (syncTiltInput) {
+    state.map.bearing = clampMapBearing(map.getBearing());
+    if (syncInputs) {
+      // pitch/rotate イベント毎の無条件代入はレイアウトを誘発するため、丸め値が変わったときだけ書く
       var tiltValue = String(Math.round(state.map.tilt));
-      // pitch イベント毎の無条件代入はレイアウトを誘発するため、丸め値が変わったときだけ書く
       if (els.mapTiltInput.value !== tiltValue) els.mapTiltInput.value = tiltValue;
+      var bearingValue = String(Math.round(state.map.bearing));
+      if (els.mapBearingInput.value !== bearingValue) els.mapBearingInput.value = bearingValue;
     }
   }
   function syncMapCamera() {
@@ -559,7 +591,8 @@
     map.jumpTo({
       center: [state.map.center.lon, state.map.center.lat],
       zoom: state.map.zoom,
-      pitch: state.map.tilt
+      pitch: state.map.tilt,
+      bearing: state.map.bearing
     });
   }
   function syncMapMarkers() {
@@ -585,13 +618,14 @@
     var r = state.map.radius;
     els.mapSphereSvg.style.width = (r * 2) + 'px';
     els.mapSphereSvg.style.height = (r * 2) + 'px';
+    updateMapSphereScale();
     syncMapMarkers();
     var date = state.selectedDate;
     var tz = -date.getTimezoneOffset();
     var p = ymd(date);
     var daily = getDaily(p, state.map.selected, tz);
     var basis = mapSphereBasis();
-    var viewKey = String(Math.round(state.map.tilt));
+    var viewKey = Math.round(state.map.tilt) + '/' + Math.round(state.map.bearing);
     if (mapRendered.view !== viewKey) renderMapSphereGrid(basis);
     if (mapRendered.view !== viewKey || mapRendered.daily !== daily.key) renderMapSpherePaths(daily, basis);
     var markerKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5), viewKey].join('|');
@@ -612,7 +646,23 @@
     mapRendered.marker = markerKey;
   }
   function mapSphereBasis() {
-    return basisFromForward(azAltVector(180, 90 - state.map.tilt));
+    // 地図の回転(bearing)に合わせて天球ドームの方位を回す。
+    // MapLibre は bearing の方位が画面上端に来るため、カメラ方位は bearing+180(手前=画面下)。
+    var b = state.map.bearing || 0;
+    var forward = azAltVector(180 + b, 90 - state.map.tilt); // 視点(カメラ)へ向かう方向
+    var right = normalize(azAltVector(90 + b, 0));            // 画面右 = bearing+90 の水平方向
+    var up = normalize(cross(forward, right));
+    return { forward: forward, right: right, up: up };
+  }
+  function mapSphereZoomFactor() {
+    // 地上サイズを一定に見せるため、基準ズーム(12)からの倍率でスケールする(2^Δzoom)。上下限でクランプ。
+    var zoom = map ? map.getZoom() : state.map.zoom;
+    var f = Math.pow(2, zoom - 12);
+    return Math.max(0.12, Math.min(8, f));
+  }
+  function updateMapSphereScale() {
+    if (!els.mapSphereSvg) return;
+    els.mapSphereSvg.style.transform = 'scale(' + mapSphereZoomFactor().toFixed(3) + ')';
   }
   function renderMapSphereGrid(basis) {
     renderSphereGridInto(mapSphereTargets(), basis, { zenith: false, observer: false });
@@ -642,6 +692,11 @@
   }
   function clampMapTilt(tilt) {
     return Math.max(0, Math.min(mapMaxTilt, tilt));
+  }
+  function clampMapBearing(bearing) {
+    if (!isFinite(bearing)) return 0;
+    // -180〜180 に正規化(getBearing の範囲に合わせる)
+    return ((bearing + 180) % 360 + 360) % 360 - 180;
   }
   function clampLat(lat) {
     return Math.max(-90, Math.min(90, lat));

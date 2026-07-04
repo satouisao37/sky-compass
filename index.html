@@ -124,6 +124,10 @@
               <span>傾き</span>
               <input id="mapTiltInput" type="range" min="0" max="60" step="1" value="0">
             </label>
+            <label class="map-bearing-label" for="mapBearingInput">
+              <span>回転</span>
+              <input id="mapBearingInput" type="range" min="-180" max="180" step="1" value="0">
+            </label>
           </div>
           <div id="mapInfo" class="map-info"></div>
         </div>
@@ -152,7 +156,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.9.2</p>
+    <p class="app-version">スカイコンパス v0.10.0</p>
   </main>
 
   <script src="astro.js" defer></script>
