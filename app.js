@@ -354,8 +354,7 @@
       state.sphere.lastX = ev.clientX;
       state.sphere.lastY = ev.clientY;
       // コンパス連動中は方位を端末向きが持つため横ドラッグは無効。仰角は常に調整可
-      // 一人称投影ではドラッグ右で正面を右へ流す(掴んで回す)ため az を減らす向き
-      if (!state.compassOn) state.sphere.az = norm360(state.sphere.az - dx * .45);
+      if (!state.compassOn) state.sphere.az = norm360(state.sphere.az + dx * .45);
       state.sphere.el = Math.max(5, Math.min(85, state.sphere.el + dy * .28));
       requestSphereRender();
     });
@@ -399,20 +398,20 @@
     sphereRendered.daily = daily.key;
     sphereRendered.marker = markerKey;
   }
-  // 天球の視点方位: コンパス連動ONかつ方位取得済みなら端末方位に追従(向いた方角の空が中央へ)、
-  // それ以外(北上固定 or 初期化前)はドラッグ値を使う。仰角(el)は常にドラッグ制御。
+  // 天球の視点方位: コンパス連動ONかつ方位取得済みなら端末方位に追従。外部視点では 180+heading にすると
+  // 真上から見た回転が2Dコンパス(N方位=−heading=向いた方角が上)と一致する。それ以外はドラッグ値を使う。
   function sphereViewAz() {
-    return (state.compassOn && state.orientation.ready) ? norm360(state.heading) : state.sphere.az;
+    return (state.compassOn && state.orientation.ready) ? norm360(180 + state.heading) : state.sphere.az;
   }
-  // 一人称(観測者の位置から見上げた)投影。right=視線方位+90°=実際の右手側にすることで
-  // 東西が実世界と一致する(外部視点 cross(zenith,forward) は左右鏡像になり、コンパス連動で反対に見える)
+  // 外部(俯瞰)視点の正射影。真上から見たとき N上・E右・S下・W左(時計回り)で2Dコンパスと一致する。
+  // コンパス連動時の方位は sphereViewAz で 180−heading とし、真上視で2Dと同じ回転になるようにする。
   function sphereBasis() {
     var forward = azAltVector(sphereViewAz(), state.sphere.el);
     var zenith = { x: 0, y: 0, z: 1 };
-    var right = cross(forward, zenith);
+    var right = cross(zenith, forward);
     if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
     right = normalize(right);
-    var up = normalize(cross(right, forward));
+    var up = normalize(cross(forward, right));
     return { forward: forward, right: right, up: up };
   }
   function sphereProject(v, basis) {
