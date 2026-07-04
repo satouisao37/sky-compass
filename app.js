@@ -46,6 +46,7 @@
   var basisPrev = null;
   var ref3d = null;
   var ref3dSize = '';
+  var paths3d = null;
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
   var mapRendered = { view: '', daily: '', marker: '' };
@@ -60,9 +61,10 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
+    build3dPaths();
     initMapState();
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
@@ -910,11 +912,46 @@
     var rect = els.sky3d.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     els.sky3dStatus.style.display = 'none';
-    var bodies = get3dBodies(state.selectedDate, state.loc);
+    var date = state.selectedDate;
+    var daily = getDaily(ymd(date), state.loc, -date.getTimezoneOffset());
+    var bodies = get3dBodies(date, state.loc);
     var basis = cameraBasis(state.orientation);
     render3dRef(basis, rect);
+    render3dPaths(daily, basis, rect);
     draw3dBody(els.sun3d, els.sunGuide, bodies.sun, basis, rect, 'sun');
     draw3dBody(els.moon3d, els.moonGuide, bodies.moon, basis, rect, 'moon');
+  }
+  function build3dPaths() {
+    // 減光(地平線下)を先に描いて実線を上に重ねる。太陽を最後に置き最前面へ
+    els.sky3dPaths.innerHTML =
+      '<path class="path3d-moon path3d-dim"/><path class="path3d-moon"/>' +
+      '<path class="path3d-sun path3d-dim"/><path class="path3d-sun"/>';
+    var p = els.sky3dPaths.querySelectorAll('path');
+    paths3d = { moonDim: p[0], moon: p[1], sunDim: p[2], sun: p[3] };
+  }
+  // 太陽・月の日周軌道(毎正時サンプル)を等距離射影でつなぐ。
+  // 視線から遠い(真後ろ側)線分は投影半径が発散して画面を横切る誤線になるため θ≦120° の区間のみ描く。
+  function render3dPaths(daily, basis, rect) {
+    var sun = split3dPath(daily.sphereSun, basis, rect.width, rect.height);
+    var moon = split3dPath(daily.sphereMoon, basis, rect.width, rect.height);
+    paths3d.sun.setAttribute('d', sun.above);
+    paths3d.sunDim.setAttribute('d', sun.below);
+    paths3d.moon.setAttribute('d', moon.above);
+    paths3d.moonDim.setAttribute('d', moon.below);
+  }
+  function split3dPath(samples, basis, w, h) {
+    var thetaMax = 120 * Math.PI / 180;
+    var above = '', below = '';
+    for (var i = 0; i < samples.length - 1; i++) {
+      var a = samples[i], b = samples[i + 1];
+      var pa = projectVec(a.vector, basis, w, h);
+      var pb = projectVec(b.vector, basis, w, h);
+      if (pa.theta > thetaMax || pb.theta > thetaMax) continue;
+      var seg = 'M' + pa.x.toFixed(1) + ' ' + pa.y.toFixed(1) + 'L' + pb.x.toFixed(1) + ' ' + pb.y.toFixed(1);
+      if (a.alt < 0 || b.alt < 0) below += seg;
+      else above += seg;
+    }
+    return { above: above, below: below };
   }
   function draw3dBody(bodyEl, guideEl, pos, basis, rect, kind) {
     var out = project3d(pos, basis, rect.width, rect.height, vis3d[kind]);

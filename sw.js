@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_VERSION = 'sky-compass-v23';
+var CACHE_VERSION = 'sky-compass-v24';
 var ASSETS = [
   '.',
   'index.html',
