@@ -433,7 +433,8 @@
     window.addEventListener('resize', function () { if (state.mode === 'map') { mapRendered.tiles = ''; requestMapRender(); } });
   }
   function mapPointerDown(ev) {
-    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target === els.mapUseBtn) return;
+    // 情報パネルは pointer-events を生かしたまま除外する(none にするとタップが地図へ素通しして裏の地点を選択してしまう)
+    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target.closest('.map-info') || ev.target === els.mapUseBtn) return;
     ev.preventDefault();
     els.mapView.setPointerCapture(ev.pointerId);
     state.map.pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, startX: ev.clientX, startY: ev.clientY };
