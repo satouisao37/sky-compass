@@ -1,12 +1,14 @@
 'use strict';
 
-var CACHE_VERSION = 'sky-compass-v20';
+var CACHE_VERSION = 'sky-compass-v21';
 var ASSETS = [
   '.',
   'index.html',
   'style.css',
   'astro.js',
   'app.js',
+  'vendor/maplibre-gl.css',
+  'vendor/maplibre-gl.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
