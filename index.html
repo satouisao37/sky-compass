@@ -37,6 +37,7 @@
         <button id="mode2dBtn" type="button" class="active" aria-pressed="true">2Dコンパス</button>
         <button id="mode3dBtn" type="button" aria-pressed="false">3Dかざし</button>
         <button id="modeSphereBtn" type="button" aria-pressed="false">天球</button>
+        <button id="modeMapBtn" type="button" aria-pressed="false">地図</button>
       </div>
       <div class="compass-wrap">
         <svg id="skySvg" class="sky" viewBox="-120 -120 240 240" role="img" aria-label="太陽と月の方位高度">
@@ -88,6 +89,41 @@
           <g id="sphereMarkers"></g>
           <g id="sphereLabels"></g>
         </svg>
+        <div id="mapView" class="map-view hidden" aria-label="地図上の選択地点の天球">
+          <div id="mapTiles" class="map-tiles"></div>
+          <div id="mapMarker" class="map-marker" aria-hidden="true"></div>
+          <svg id="mapSphereSvg" class="map-sphere" viewBox="-120 -120 240 240" aria-hidden="true">
+            <defs>
+              <filter id="mapGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle class="horizon" cx="0" cy="0" r="100"/>
+            <g id="mapTicks"></g>
+            <circle class="map-alt-ring" cx="0" cy="0" r="66.7"/>
+            <circle class="map-alt-ring" cx="0" cy="0" r="33.3"/>
+            <g class="cardinals">
+              <text x="0" y="-104">N</text><text x="104" y="4">E</text>
+              <text x="0" y="112">S</text><text x="-104" y="4">W</text>
+            </g>
+            <g id="mapSunPath"></g>
+            <g id="mapMoonPath"></g>
+            <g id="mapSunMarker"></g>
+            <g id="mapMoonMarker"></g>
+          </svg>
+          <div class="map-controls" aria-label="地図操作">
+            <button id="mapZoomIn" type="button" aria-label="拡大">+</button>
+            <button id="mapZoomOut" type="button" aria-label="縮小">−</button>
+          </div>
+          <label class="map-radius-label" for="mapRadiusInput">
+            <span>天球</span>
+            <input id="mapRadiusInput" type="range" min="40" max="160" step="1" value="90">
+          </label>
+          <div id="mapInfo" class="map-info"></div>
+          <button id="mapUseBtn" class="map-use" type="button">この地点を使う</button>
+          <div class="map-credit">地理院タイル</div>
+        </div>
         <div id="belowLabel" class="below-label"></div>
       </div>
       <div class="compass-actions">
@@ -113,7 +149,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.5.4</p>
+    <p class="app-version">スカイコンパス v0.6.0</p>
   </main>
 
   <script src="astro.js"></script>
