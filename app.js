@@ -354,7 +354,8 @@
       state.sphere.lastX = ev.clientX;
       state.sphere.lastY = ev.clientY;
       // コンパス連動中は方位を端末向きが持つため横ドラッグは無効。仰角は常に調整可
-      if (!state.compassOn) state.sphere.az = norm360(state.sphere.az + dx * .45);
+      // 一人称投影ではドラッグ右で正面を右へ流す(掴んで回す)ため az を減らす向き
+      if (!state.compassOn) state.sphere.az = norm360(state.sphere.az - dx * .45);
       state.sphere.el = Math.max(5, Math.min(85, state.sphere.el + dy * .28));
       requestSphereRender();
     });
@@ -403,13 +404,15 @@
   function sphereViewAz() {
     return (state.compassOn && state.orientation.ready) ? norm360(state.heading) : state.sphere.az;
   }
+  // 一人称(観測者の位置から見上げた)投影。right=視線方位+90°=実際の右手側にすることで
+  // 東西が実世界と一致する(外部視点 cross(zenith,forward) は左右鏡像になり、コンパス連動で反対に見える)
   function sphereBasis() {
     var forward = azAltVector(sphereViewAz(), state.sphere.el);
     var zenith = { x: 0, y: 0, z: 1 };
-    var right = cross(zenith, forward);
+    var right = cross(forward, zenith);
     if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
     right = normalize(right);
-    var up = normalize(cross(forward, right));
+    var up = normalize(cross(right, forward));
     return { forward: forward, right: right, up: up };
   }
   function sphereProject(v, basis) {
