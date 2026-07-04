@@ -114,16 +114,17 @@
             <button id="mapZoomIn" type="button" aria-label="拡大">+</button>
             <button id="mapZoomOut" type="button" aria-label="縮小">−</button>
           </div>
-          <label class="map-radius-label" for="mapRadiusInput">
-            <span>天球</span>
-            <input id="mapRadiusInput" type="range" min="40" max="160" step="1" value="90">
-          </label>
-          <label class="map-tilt-label" for="mapTiltInput">
-            <span>傾き</span>
-            <input id="mapTiltInput" type="range" min="0" max="60" step="1" value="0">
-          </label>
+          <div class="map-sliders" aria-label="天球表示の調整">
+            <label class="map-radius-label" for="mapRadiusInput">
+              <span>天球</span>
+              <input id="mapRadiusInput" type="range" min="40" max="160" step="1" value="90">
+            </label>
+            <label class="map-tilt-label" for="mapTiltInput">
+              <span>傾き</span>
+              <input id="mapTiltInput" type="range" min="0" max="60" step="1" value="0">
+            </label>
+          </div>
           <div id="mapInfo" class="map-info"></div>
-          <button id="mapUseBtn" class="map-use" type="button">この地点を使う</button>
         </div>
         <div id="belowLabel" class="below-label"></div>
       </div>
@@ -150,7 +151,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.8.1</p>
+    <p class="app-version">スカイコンパス v0.8.2</p>
   </main>
 
   <script src="astro.js" defer></script>
