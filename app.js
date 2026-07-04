@@ -7,6 +7,9 @@
   var mapMaxZoom = 17;
   var mapMinRadius = 40;
   var mapMaxRadius = 160;
+  var mapMaxTilt = 55;
+  var mapMaxTiles = 200;
+  var mapPerspectiveRatio = 1.45;
   var state = {
     loc: loadLoc(),
     selectedDate: new Date(),
@@ -47,16 +50,15 @@
   var ref3dSize = '';
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
-  var mapRendered = { tiles: '', daily: '', marker: '' };
+  var mapRendered = { tiles: '', view: '', daily: '', marker: '' };
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapTiles','mapMarker','mapSphereSvg','mapTicks','mapSunPath','mapMoonPath','mapSunMarker','mapMoonMarker','mapZoomIn','mapZoomOut','mapRadiusInput','mapInfo','mapUseBtn','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapSky','mapTiles','mapFog','mapMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','mapUseBtn','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
-    els.mapTicks.innerHTML = els.ticks.innerHTML;
     buildRef3d();
     initMapState();
     els.declinationInput.value = state.declination;
@@ -117,6 +119,7 @@
       selected: { lat: fallback.lat, lon: fallback.lon },
       zoom: 12,
       radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
+      tilt: 0,
       pointers: {},
       drag: null,
       pinch: null,
@@ -128,9 +131,11 @@
         if (saved.center && validLoc(saved.center)) out.center = { lat: saved.center.lat, lon: saved.center.lon };
         if (saved.selected && validLoc(saved.selected)) out.selected = { lat: saved.selected.lat, lon: saved.selected.lon };
         if (isFinite(saved.zoom)) out.zoom = clampMapZoom(saved.zoom);
+        if (isFinite(saved.tilt)) out.tilt = clampMapTilt(saved.tilt);
       }
     } catch (e) {}
     out.radius = clampMapRadius(out.radius || 90);
+    out.tilt = clampMapTilt(out.tilt || 0);
     return out;
   }
   function initMapState() {
@@ -138,6 +143,7 @@
     try { saved = !!localStorage.getItem('mapView'); } catch (e) {}
     if (!saved) resetMapToLoc();
     els.mapRadiusInput.value = String(state.map.radius);
+    els.mapTiltInput.value = String(state.map.tilt);
   }
   function validLoc(loc) {
     return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -mapMaxLat && loc.lat <= mapMaxLat && loc.lon >= -180 && loc.lon <= 180;
@@ -148,7 +154,8 @@
       localStorage.setItem('mapView', JSON.stringify({
         center: state.map.center,
         selected: state.map.selected,
-        zoom: state.map.zoom
+        zoom: state.map.zoom,
+        tilt: state.map.tilt
       }));
     } catch (e) {}
   }
@@ -159,8 +166,10 @@
     state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
     state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
     state.map.zoom = 12;
+    state.map.tilt = 0;
     mapRendered.daily = '';
     mapRendered.marker = '';
+    mapRendered.view = '';
     mapRendered.tiles = '';
   }
   function locate(fromTap) {
@@ -418,6 +427,13 @@
       saveMapState();
       requestMapRender();
     });
+    els.mapTiltInput.addEventListener('input', function () {
+      state.map.tilt = clampMapTilt(Number(els.mapTiltInput.value) || 0);
+      mapRendered.tiles = '';
+      mapRendered.view = '';
+      saveMapState();
+      requestMapRender();
+    });
     els.mapUseBtn.addEventListener('click', function () {
       state.loc = { lat: state.map.selected.lat, lon: state.map.selected.lon, acc: null };
       saveLoc(state.loc);
@@ -434,7 +450,7 @@
   }
   function mapPointerDown(ev) {
     // 情報パネルは pointer-events を生かしたまま除外する(none にするとタップが地図へ素通しして裏の地点を選択してしまう)
-    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target.closest('.map-info') || ev.target === els.mapUseBtn) return;
+    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target.closest('.map-tilt-label') || ev.target.closest('.map-info') || ev.target === els.mapUseBtn) return;
     ev.preventDefault();
     els.mapView.setPointerCapture(ev.pointerId);
     state.map.pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, startX: ev.clientX, startY: ev.clientY };
@@ -460,10 +476,10 @@
     var dx = ev.clientX - p.startX;
     var dy = ev.clientY - p.startY;
     if (Math.sqrt(dx * dx + dy * dy) > 8) state.map.drag.moved = true;
-    var next = {
-      x: state.map.drag.centerPx.x - dx,
-      y: state.map.drag.centerPx.y - dy
-    };
+    var rect = els.mapView.getBoundingClientRect();
+    var plane = screenToMapPlane(clientOffset(ev.clientX, ev.clientY, rect), rect);
+    if (!plane) return;
+    var next = { x: state.map.drag.grabWorld.x - plane.x, y: state.map.drag.grabWorld.y - plane.y };
     state.map.center = worldToLoc(next, state.map.zoom);
     requestMapRender();
   }
@@ -478,10 +494,13 @@
       var dx = ev.clientX - p.startX;
       var dy = ev.clientY - p.startY;
       if (Math.sqrt(dx * dx + dy * dy) < 8) {
-        state.map.selected = clientToMapLoc(ev.clientX, ev.clientY);
-        mapRendered.daily = '';
-        mapRendered.marker = '';
-        requestMapRender();
+        var loc = clientToMapLoc(ev.clientX, ev.clientY);
+        if (loc) {
+          state.map.selected = loc;
+          mapRendered.daily = '';
+          mapRendered.marker = '';
+          requestMapRender();
+        }
       }
     }
     var ids = mapPointerIds();
@@ -497,11 +516,14 @@
   function beginMapDrag(pointerId, moved) {
     var p = state.map.pointers[pointerId];
     if (!p) return;
+    var rect = els.mapView.getBoundingClientRect();
+    var center = locToWorld(state.map.center, state.map.zoom);
+    var plane = screenToMapPlane(clientOffset(p.x, p.y, rect), rect);
     p.startX = p.x;
     p.startY = p.y;
     state.map.drag = {
       pointerId: Number(pointerId),
-      centerPx: locToWorld(state.map.center, state.map.zoom),
+      grabWorld: plane ? { x: center.x + plane.x, y: center.y + plane.y } : center,
       moved: moved
     };
     state.map.pinch = null;
@@ -547,12 +569,13 @@
     zoom = clampMapZoom(zoom);
     if (zoom === state.map.zoom) return;
     var anchor = clientToMapLoc(clientX, clientY);
+    if (!anchor) return;
     var rect = els.mapView.getBoundingClientRect();
+    var plane = screenToMapPlane(clientOffset(clientX, clientY, rect), rect);
+    if (!plane) return;
     var anchorPx = locToWorld(anchor, zoom);
-    var cx = clientX - rect.left;
-    var cy = clientY - rect.top;
     state.map.zoom = zoom;
-    state.map.center = worldToLoc({ x: anchorPx.x - cx + rect.width / 2, y: anchorPx.y - cy + rect.height / 2 }, zoom);
+    state.map.center = worldToLoc({ x: anchorPx.x - plane.x, y: anchorPx.y - plane.y }, zoom);
     mapRendered.tiles = '';
     saveMapState();
     requestMapRender();
@@ -560,10 +583,9 @@
   function clientToMapLoc(clientX, clientY) {
     var rect = els.mapView.getBoundingClientRect();
     var center = locToWorld(state.map.center, state.map.zoom);
-    return worldToLoc({
-      x: center.x - rect.width / 2 + (clientX - rect.left),
-      y: center.y - rect.height / 2 + (clientY - rect.top)
-    }, state.map.zoom);
+    var plane = screenToMapPlane(clientOffset(clientX, clientY, rect), rect);
+    if (!plane) return null;
+    return worldToLoc({ x: center.x + plane.x, y: center.y + plane.y }, state.map.zoom);
   }
   function requestMapRender() {
     if (state.mode !== 'map' || state.map.raf) return;
@@ -582,15 +604,28 @@
   }
   function renderMapTiles(rect, center) {
     var z = state.map.zoom;
+    var metrics = mapTiltMetrics(rect);
     var left = center.x - rect.width / 2;
     var top = center.y - rect.height / 2;
     var max = Math.pow(2, z);
-    var x1 = Math.floor(left / 256) - 1;
-    var x2 = Math.floor((left + rect.width) / 256) + 1;
-    var y1 = Math.max(0, Math.floor(top / 256) - 1);
-    var y2 = Math.min(max - 1, Math.floor((top + rect.height) / 256) + 1);
-    els.mapTiles.style.transform = 'translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
-    var key = [z, x1, x2, y1, y2, Math.round(rect.width), Math.round(rect.height)].join('|');
+    var bounds = mapVisiblePlaneBounds(rect, metrics);
+    var x1 = Math.floor((center.x + bounds.minX) / 256) - 1;
+    var x2 = Math.floor((center.x + bounds.maxX) / 256) + 1;
+    var y1 = Math.max(0, Math.floor((center.y + bounds.minY) / 256) - 1);
+    var y2 = Math.min(max - 1, Math.floor((center.y + bounds.maxY) / 256) + 1);
+    var limited = limitMapTileRange(x1, x2, y1, y2);
+    x1 = limited.x1;
+    x2 = limited.x2;
+    y1 = limited.y1;
+    y2 = limited.y2;
+    els.mapView.classList.toggle('tilted', state.map.tilt > 0);
+    els.mapView.style.setProperty('--map-fog-opacity', String(Math.min(.82, state.map.tilt / mapMaxTilt * .72)));
+    if (state.map.tilt) {
+      els.mapTiles.style.transform = 'perspective(' + metrics.perspective.toFixed(1) + 'px) rotateX(' + state.map.tilt.toFixed(1) + 'deg) translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
+    } else {
+      els.mapTiles.style.transform = 'translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
+    }
+    var key = [z, x1, x2, y1, y2, Math.round(rect.width), Math.round(rect.height), state.map.tilt, Math.round(metrics.perspective)].join('|');
     if (mapRendered.tiles === key) return;
     mapRendered.tiles = key;
     els.mapTiles.innerHTML = '';
@@ -610,6 +645,11 @@
   }
   function renderMapOverlay(rect, center) {
     var pos = mapScreenPoint(state.map.selected, rect, center);
+    if (!pos) {
+      els.mapMarker.style.transform = 'translate(-999px,-999px)';
+      els.mapSphereSvg.style.transform = 'translate(-999px,-999px)';
+      return;
+    }
     var r = state.map.radius;
     els.mapMarker.style.transform = 'translate(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px)';
     els.mapSphereSvg.style.width = (r * 2) + 'px';
@@ -619,26 +659,143 @@
     var tz = -date.getTimezoneOffset();
     var p = ymd(date);
     var daily = getDaily(p, state.map.selected, tz);
-    if (mapRendered.daily !== daily.key) {
-      els.mapSunPath.innerHTML = daily.sunPath;
-      els.mapMoonPath.innerHTML = daily.moonPath;
-      mapRendered.daily = daily.key;
-    }
-    var markerKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5)].join('|');
-    if (mapRendered.marker === markerKey) return;
+    var basis = mapSphereBasis();
+    var viewKey = state.map.tilt.toFixed(2);
+    if (mapRendered.view !== viewKey) renderMapSphereGrid(basis);
+    if (mapRendered.view !== viewKey || mapRendered.daily !== daily.key) renderMapSpherePaths(daily, basis);
+    var markerKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5), viewKey].join('|');
     var sun = Astro.sunPosition(date, state.map.selected.lat, state.map.selected.lon);
     var moon = Astro.moonPosition(date, state.map.selected.lat, state.map.selected.lon);
     var illum = Astro.moonIllumination(date);
-    drawBody(els.mapSunMarker, sun, 'sun', illum);
-    drawBody(els.mapMoonMarker, moon, 'moon', illum);
+    if (mapRendered.marker !== markerKey) renderMapSphereMarkers(sun, moon, illum, basis);
     els.mapInfo.textContent = state.map.selected.lat.toFixed(5) + ', ' + state.map.selected.lon.toFixed(5) +
       ' / 太陽 ' + degDir(sun.az) + ' 高度 ' + sun.alt.toFixed(1) + '度' +
       ' / 月 ' + degDir(moon.az) + ' 高度 ' + moon.alt.toFixed(1) + '度';
+    mapRendered.view = viewKey;
+    mapRendered.daily = daily.key;
     mapRendered.marker = markerKey;
   }
   function mapScreenPoint(loc, rect, center) {
     var p = locToWorld(loc, state.map.zoom);
-    return { x: p.x - center.x + rect.width / 2, y: p.y - center.y + rect.height / 2 };
+    var projected = mapPlaneToScreen({ x: p.x - center.x, y: p.y - center.y }, rect);
+    if (!projected) return null;
+    return { x: projected.x + rect.width / 2, y: projected.y + rect.height / 2 };
+  }
+  function clientOffset(clientX, clientY, rect) {
+    return { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 };
+  }
+  function mapTiltMetrics(rect) {
+    var tiltRad = clampMapTilt(state.map.tilt) * Math.PI / 180;
+    return {
+      perspective: Math.max(1, rect.height * mapPerspectiveRatio),
+      tiltRad: tiltRad,
+      sin: Math.sin(tiltRad),
+      cos: Math.cos(tiltRad)
+    };
+  }
+  function screenToMapPlane(screen, rect) {
+    var m = mapTiltMetrics(rect);
+    var denom = m.cos + screen.y * m.sin / m.perspective;
+    if (denom <= 1e-3) return null;
+    var y = screen.y / denom;
+    var w = 1 - y * m.sin / m.perspective;
+    if (w <= 1e-3) return null;
+    return { x: screen.x * w, y: y };
+  }
+  function mapPlaneToScreen(plane, rect) {
+    var m = mapTiltMetrics(rect);
+    var w = 1 - plane.y * m.sin / m.perspective;
+    if (w <= 1e-3) return null;
+    return { x: plane.x / w, y: plane.y * m.cos / w };
+  }
+  function mapVisiblePlaneBounds(rect, metrics) {
+    var corners = [
+      { x: -rect.width / 2, y: -rect.height / 2 },
+      { x: rect.width / 2, y: -rect.height / 2 },
+      { x: rect.width / 2, y: rect.height / 2 },
+      { x: -rect.width / 2, y: rect.height / 2 }
+    ];
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    var farY = metrics.sin > 1e-5 ? -metrics.perspective / Math.tan(metrics.tiltRad) * .98 : -rect.height / 2;
+    corners.forEach(function (screen) {
+      var plane = screenToMapPlane(screen, rect);
+      if (!plane) {
+        plane = { y: farY };
+        plane.x = screen.x * (1 - plane.y * metrics.sin / metrics.perspective);
+      }
+      minX = Math.min(minX, plane.x);
+      maxX = Math.max(maxX, plane.x);
+      minY = Math.min(minY, plane.y);
+      maxY = Math.max(maxY, plane.y);
+    });
+    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+  }
+  function limitMapTileRange(x1, x2, y1, y2) {
+    while ((x2 - x1 + 1) * (y2 - y1 + 1) > mapMaxTiles) {
+      if (y2 - y1 >= x2 - x1 && y1 < y2) y1++;
+      else if (x1 < x2) {
+        if (Math.abs(x1) > Math.abs(x2)) x1++;
+        else x2--;
+      } else break;
+    }
+    return { x1: x1, x2: x2, y1: y1, y2: y2 };
+  }
+  function mapSphereBasis() {
+    var forward = azAltVector(180, 90 - state.map.tilt);
+    var zenith = { x: 0, y: 0, z: 1 };
+    var right = cross(zenith, forward);
+    if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
+    right = normalize(right);
+    var up = normalize(cross(forward, right));
+    return { forward: forward, right: right, up: up };
+  }
+  function renderMapSphereGrid(basis) {
+    var ground = spherePath(sphereStatic.horizon, basis);
+    var horizon = sphereSplitPaths(sphereStatic.horizon, basis, 'sphere-horizon', false);
+    var back = horizon.back;
+    var front = horizon.front;
+    sphereStatic.alts.forEach(function (samples) {
+      var html = sphereSplitPaths(samples, basis, 'sphere-alt', false);
+      back += html.back;
+      front += html.front;
+    });
+    sphereStatic.meridians.forEach(function (samples) {
+      var html = sphereSplitPaths(samples, basis, 'sphere-meridian', false);
+      back += html.back;
+      front += html.front;
+    });
+    els.mapSphereGround.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
+      '<path class="sphere-ground" d="' + ground + 'Z"/>';
+    els.mapSphereGridBack.innerHTML = back;
+    els.mapSphereGridFront.innerHTML = front;
+    renderMapSphereLabels(basis);
+  }
+  function renderMapSphereLabels(basis) {
+    var html = '';
+    sphereStatic.labels.forEach(function (item) {
+      var p = sphereProject(item.v, basis);
+      html += '<text class="sphere-label' + (p.front ? '' : ' sphere-back') + '" x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '">' + item.text + '</text>';
+    });
+    els.mapSphereLabels.innerHTML = html;
+  }
+  function renderMapSpherePaths(daily, basis) {
+    var sun = sphereBodyPath(daily.sphereSun, basis, 'sun');
+    var moon = sphereBodyPath(daily.sphereMoon, basis, 'moon');
+    els.mapSpherePathsBack.innerHTML = sun.back + moon.back;
+    els.mapSpherePathsFront.innerHTML = sun.front + moon.front;
+  }
+  function renderMapSphereMarkers(sunPos, moonPos, illum, basis) {
+    var sun = { az: sunPos.az, alt: sunPos.alt, vector: azAltVector(sunPos.az, sunPos.alt) };
+    var moon = { az: moonPos.az, alt: moonPos.alt, vector: azAltVector(moonPos.az, moonPos.alt) };
+    var sp = sphereProject(sun.vector, basis);
+    var mp = sphereProject(moon.vector, basis);
+    var shadow = (1 - illum.fraction) * 10;
+    var side = illum.age < 14.77 ? -1 : 1;
+    var shadowX = mp.x + side * Math.abs(illum.fraction - .5) * 4;
+    // 地図モードでは意図的に天球モードの正射影ドームへ切り替える。tilt=0 の平面コンパス曲線とは異なる。
+    els.mapSphereMarkers.innerHTML =
+      '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
+      '<g class="' + (moon.alt < 0 ? 'sphere-below ' : '') + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadowX.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.toFixed(1) + '" ry="4.7"/></g>';
   }
   function locToWorld(loc, z) {
     var lat = Math.max(-mapMaxLat, Math.min(mapMaxLat, loc.lat));
@@ -678,6 +835,9 @@
   }
   function clampMapRadius(radius) {
     return Math.max(mapMinRadius, Math.min(mapMaxRadius, Math.round(radius)));
+  }
+  function clampMapTilt(tilt) {
+    return Math.max(0, Math.min(mapMaxTilt, Math.round(tilt)));
   }
   function bindSphereDrag() {
     els.sphereSvg.addEventListener('pointerdown', function (ev) {
