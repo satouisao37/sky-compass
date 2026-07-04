@@ -83,7 +83,9 @@ main { max-width: 620px; margin: 0 auto; }
 .moon-disc { fill: var(--moon); stroke: #a9bcc8; stroke-width: .6; }
 .moon-shadow { fill: #303b43; opacity: .9; }
 .below { opacity: .35; }
-.below-label { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; }
+/* 円内の絶対配置だと方位文字(S/W)と重なるためコンパス直下の通常フローへ。空のときは畳む */
+.below-label { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
+.below-label:empty { display: none; }
 .sky-3d { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: radial-gradient(circle at 50% 38%, #22303a 0, #121b22 58%, #0d1317 100%); }
 .sky-3d-ref { position: absolute; inset: 0; width: 100%; height: 100%; }
 .sky-3d-ref .horizon3d { fill: none; stroke: rgba(153, 168, 176, .5); stroke-width: 1.2; }
@@ -106,7 +108,7 @@ main { max-width: 620px; margin: 0 auto; }
 .sun-guide { color: var(--sun); }
 .moon-guide { color: var(--moon); }
 .sky-3d-status { position: absolute; left: 24px; right: 24px; bottom: 28px; padding: 8px 10px; border-radius: 8px; background: rgba(15, 21, 25, .82); color: var(--muted); font-size: 12px; text-align: center; pointer-events: none; }
-.compass-actions { display: flex; align-items: center; gap: 12px; justify-content: center; color: var(--muted); font-size: 12px; margin-top: -6px; }
+.compass-actions { display: flex; align-items: center; gap: 12px; justify-content: center; color: var(--muted); font-size: 12px; margin-top: 6px; }
 .compass-actions.hidden { display: none; }
 
 .app-version { text-align: center; color: var(--muted); font-size: 11px; margin: 14px 0 24px; }

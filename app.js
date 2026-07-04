@@ -358,7 +358,9 @@
     els.moonNow.textContent = '方位 ' + degDir(moon.az) + ' / 高度 ' + moon.alt.toFixed(1) + '度 / 月齢 ' + illum.age.toFixed(1) + ' / 輝面比 ' + Math.round(illum.fraction * 100) + '%';
     els.sunTimes.textContent = '出 ' + fmtTime(st.rise) + ' / 南中 ' + fmtTime(st.transit) + ' / 入 ' + fmtTime(st.set);
     els.moonTimes.textContent = '出 ' + fmtTime(mt.rise) + ' / 南中 ' + fmtTime(mt.transit) + ' / 入 ' + fmtTime(mt.set);
-    els.lightTimes.textContent = '朝GH ' + fmtRange(st.goldenAM) + ' / 夕GH ' + fmtRange(st.goldenPM) + ' / 朝BH ' + fmtRange(st.blueAM) + ' / 夕BH ' + fmtRange(st.bluePM);
+    // 略語をやめ時系列順に明記(朝=ブルー→ゴールデン、夕=ゴールデン→ブルー)。時刻は数値のみのため innerHTML でも安全
+    els.lightTimes.innerHTML = '朝　ブルーアワー ' + fmtRange(st.blueAM) + '／ゴールデンアワー ' + fmtRange(st.goldenAM) + '<br>' +
+      '夕　ゴールデンアワー ' + fmtRange(st.goldenPM) + '／ブルーアワー ' + fmtRange(st.bluePM);
     if (renderedPathKey !== daily.key) {
       els.sunPath.innerHTML = daily.sunPath;
       els.moonPath.innerHTML = daily.moonPath;
