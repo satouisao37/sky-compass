@@ -528,7 +528,13 @@
       syncMapStateFromCamera(true);
       scheduleSaveMapState();
     });
-    map.on('load', requestMapRender);
+    map.on('load', function () {
+      // 建物の立体表示(liberty 同梱の building-3d)を z13 から出す(既定 minzoom:14 では既定ズームで見えない)
+      try {
+        if (map.getLayer('building-3d')) map.setLayerZoomRange('building-3d', 13, 24);
+      } catch (e) {}
+      requestMapRender();
+    });
   }
   function makeViewportMarker(element) {
     return new maplibregl.Marker({
