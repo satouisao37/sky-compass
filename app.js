@@ -407,11 +407,15 @@
       el.innerHTML = '<circle class="sun-disc' + cls + '" cx="' + p.x + '" cy="' + p.y + '" r="5.4"/>';
       return;
     }
-    var f = illum.fraction;
-    var shadow = (1 - f) * 10;
-    var side = illum.age < 14.77 ? -1 : 1;
-    var shadowX = p.x + side * Math.abs(f - .5) * 4;
-    el.innerHTML = '<g class="' + (pos.alt < 0 ? 'below' : '') + '"><circle class="moon-disc" cx="' + p.x + '" cy="' + p.y + '" r="5.2"/><ellipse class="moon-shadow" cx="' + shadowX.toFixed(1) + '" cy="' + p.y + '" rx="' + shadow.toFixed(1) + '" ry="5.1"/></g>';
+    var shadow = moonShadowGeom(illum.fraction, illum.age, p.x);
+    el.innerHTML = '<g class="' + (pos.alt < 0 ? 'below' : '') + '"><circle class="moon-disc" cx="' + p.x + '" cy="' + p.y + '" r="5.2"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + p.y + '" rx="' + shadow.rx.toFixed(1) + '" ry="5.1"/></g>';
+  }
+  function moonShadowGeom(fraction, age, cx) {
+    var side = age < 14.77 ? -1 : 1;
+    return {
+      x: cx + side * Math.abs(fraction - .5) * 4,
+      rx: (1 - fraction) * 10
+    };
   }
   function project(pos) {
     var alt = Math.max(pos.alt, 0);
@@ -477,8 +481,7 @@
     var dy = ev.clientY - p.startY;
     if (Math.sqrt(dx * dx + dy * dy) > 8) state.map.drag.moved = true;
     var rect = els.mapView.getBoundingClientRect();
-    var plane = screenToMapPlane(clientOffset(ev.clientX, ev.clientY, rect), rect);
-    if (!plane) return;
+    var plane = screenToMapPlaneClamped(clientOffset(ev.clientX, ev.clientY, rect), rect);
     var next = { x: state.map.drag.grabWorld.x - plane.x, y: state.map.drag.grabWorld.y - plane.y };
     state.map.center = worldToLoc(next, state.map.zoom);
     requestMapRender();
@@ -613,7 +616,7 @@
     var x2 = Math.floor((center.x + bounds.maxX) / 256) + 1;
     var y1 = Math.max(0, Math.floor((center.y + bounds.minY) / 256) - 1);
     var y2 = Math.min(max - 1, Math.floor((center.y + bounds.maxY) / 256) + 1);
-    var limited = limitMapTileRange(x1, x2, y1, y2);
+    var limited = limitMapTileRange(x1, x2, y1, y2, center);
     x1 = limited.x1;
     x2 = limited.x2;
     y1 = limited.y1;
@@ -645,16 +648,16 @@
   }
   function renderMapOverlay(rect, center) {
     var pos = mapScreenPoint(state.map.selected, rect, center);
-    if (!pos) {
-      els.mapMarker.style.transform = 'translate(-999px,-999px)';
-      els.mapSphereSvg.style.transform = 'translate(-999px,-999px)';
-      return;
-    }
     var r = state.map.radius;
-    els.mapMarker.style.transform = 'translate(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px)';
     els.mapSphereSvg.style.width = (r * 2) + 'px';
     els.mapSphereSvg.style.height = (r * 2) + 'px';
-    els.mapSphereSvg.style.transform = 'translate(' + (pos.x - r).toFixed(1) + 'px,' + (pos.y - r).toFixed(1) + 'px)';
+    if (pos) {
+      els.mapMarker.style.transform = 'translate(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px)';
+      els.mapSphereSvg.style.transform = 'translate(' + (pos.x - r).toFixed(1) + 'px,' + (pos.y - r).toFixed(1) + 'px)';
+    } else {
+      els.mapMarker.style.transform = 'translate(-999px,-999px)';
+      els.mapSphereSvg.style.transform = 'translate(-999px,-999px)';
+    }
     var date = state.selectedDate;
     var tz = -date.getTimezoneOffset();
     var p = ymd(date);
@@ -702,6 +705,14 @@
     if (w <= 1e-3) return null;
     return { x: screen.x * w, y: y };
   }
+  function screenToMapPlaneClamped(screen, rect) {
+    var plane = screenToMapPlane(screen, rect);
+    if (plane) return plane;
+    var m = mapTiltMetrics(rect);
+    var y = mapFarPlaneY(rect, m);
+    var w = 1 - y * m.sin / m.perspective;
+    return { x: screen.x * w, y: y };
+  }
   function mapPlaneToScreen(plane, rect) {
     var m = mapTiltMetrics(rect);
     var w = 1 - plane.y * m.sin / m.perspective;
@@ -716,7 +727,7 @@
       { x: -rect.width / 2, y: rect.height / 2 }
     ];
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    var farY = metrics.sin > 1e-5 ? -metrics.perspective / Math.tan(metrics.tiltRad) * .98 : -rect.height / 2;
+    var farY = mapFarPlaneY(rect, metrics);
     corners.forEach(function (screen) {
       var plane = screenToMapPlane(screen, rect);
       if (!plane) {
@@ -730,72 +741,46 @@
     });
     return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
   }
-  function limitMapTileRange(x1, x2, y1, y2) {
+  function mapFarPlaneY(rect, metrics) {
+    return metrics.sin > 1e-5 ? -metrics.perspective / Math.tan(metrics.tiltRad) * .98 : -rect.height / 2;
+  }
+  function limitMapTileRange(x1, x2, y1, y2, center) {
+    var cxT = center.x / 256;
+    var cyT = center.y / 256;
     while ((x2 - x1 + 1) * (y2 - y1 + 1) > mapMaxTiles) {
-      if (y2 - y1 >= x2 - x1 && y1 < y2) y1++;
+      if (y2 - y1 >= x2 - x1 && y1 < y2) {
+        if (Math.abs(y1 - cyT) >= Math.abs(y2 - cyT)) y1++;
+        else y2--;
+      }
       else if (x1 < x2) {
-        if (Math.abs(x1) > Math.abs(x2)) x1++;
+        if (Math.abs(x1 - cxT) >= Math.abs(x2 - cxT)) x1++;
         else x2--;
       } else break;
     }
     return { x1: x1, x2: x2, y1: y1, y2: y2 };
   }
   function mapSphereBasis() {
-    var forward = azAltVector(180, 90 - state.map.tilt);
-    var zenith = { x: 0, y: 0, z: 1 };
-    var right = cross(zenith, forward);
-    if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
-    right = normalize(right);
-    var up = normalize(cross(forward, right));
-    return { forward: forward, right: right, up: up };
+    return basisFromForward(azAltVector(180, 90 - state.map.tilt));
   }
   function renderMapSphereGrid(basis) {
-    var ground = spherePath(sphereStatic.horizon, basis);
-    var horizon = sphereSplitPaths(sphereStatic.horizon, basis, 'sphere-horizon', false);
-    var back = horizon.back;
-    var front = horizon.front;
-    sphereStatic.alts.forEach(function (samples) {
-      var html = sphereSplitPaths(samples, basis, 'sphere-alt', false);
-      back += html.back;
-      front += html.front;
-    });
-    sphereStatic.meridians.forEach(function (samples) {
-      var html = sphereSplitPaths(samples, basis, 'sphere-meridian', false);
-      back += html.back;
-      front += html.front;
-    });
-    els.mapSphereGround.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
-      '<path class="sphere-ground" d="' + ground + 'Z"/>';
-    els.mapSphereGridBack.innerHTML = back;
-    els.mapSphereGridFront.innerHTML = front;
-    renderMapSphereLabels(basis);
+    renderSphereGridInto(mapSphereTargets(), basis, { zenith: false, observer: false });
   }
   function renderMapSphereLabels(basis) {
-    var html = '';
-    sphereStatic.labels.forEach(function (item) {
-      var p = sphereProject(item.v, basis);
-      html += '<text class="sphere-label' + (p.front ? '' : ' sphere-back') + '" x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '">' + item.text + '</text>';
-    });
-    els.mapSphereLabels.innerHTML = html;
+    renderSphereLabelsInto(mapSphereTargets(), basis, { zenith: false, observer: false });
   }
   function renderMapSpherePaths(daily, basis) {
-    var sun = sphereBodyPath(daily.sphereSun, basis, 'sun');
-    var moon = sphereBodyPath(daily.sphereMoon, basis, 'moon');
-    els.mapSpherePathsBack.innerHTML = sun.back + moon.back;
-    els.mapSpherePathsFront.innerHTML = sun.front + moon.front;
+    renderSpherePathsInto(mapSphereTargets(), daily, basis);
   }
   function renderMapSphereMarkers(sunPos, moonPos, illum, basis) {
     var sun = { az: sunPos.az, alt: sunPos.alt, vector: azAltVector(sunPos.az, sunPos.alt) };
     var moon = { az: moonPos.az, alt: moonPos.alt, vector: azAltVector(moonPos.az, moonPos.alt) };
     var sp = sphereProject(sun.vector, basis);
     var mp = sphereProject(moon.vector, basis);
-    var shadow = (1 - illum.fraction) * 10;
-    var side = illum.age < 14.77 ? -1 : 1;
-    var shadowX = mp.x + side * Math.abs(illum.fraction - .5) * 4;
+    var shadow = moonShadowGeom(illum.fraction, illum.age, mp.x);
     // 地図モードでは意図的に天球モードの正射影ドームへ切り替える。tilt=0 の平面コンパス曲線とは異なる。
     els.mapSphereMarkers.innerHTML =
       '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
-      '<g class="' + (moon.alt < 0 ? 'sphere-below ' : '') + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadowX.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.toFixed(1) + '" ry="4.7"/></g>';
+      '<g class="' + (moon.alt < 0 ? 'sphere-below ' : '') + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.rx.toFixed(1) + '" ry="4.7"/></g>';
   }
   function locToWorld(loc, z) {
     var lat = Math.max(-mapMaxLat, Math.min(mapMaxLat, loc.lat));
@@ -907,7 +892,9 @@
   // 外部(俯瞰)視点の正射影。真上から見たとき N上・E右・S下・W左(時計回り)で2Dコンパスと一致する。
   // コンパス連動時の方位は sphereViewAz で 180−heading とし、真上視で2Dと同じ回転になるようにする。
   function sphereBasis() {
-    var forward = azAltVector(sphereViewAz(), state.sphere.el);
+    return basisFromForward(azAltVector(sphereViewAz(), state.sphere.el));
+  }
+  function basisFromForward(forward) {
     var zenith = { x: 0, y: 0, z: 1 };
     var right = cross(zenith, forward);
     if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
@@ -923,9 +910,12 @@
     };
   }
   function renderSphereGrid(basis) {
+    renderSphereGridInto(sphereTargets(), basis, { zenith: true, observer: true });
+  }
+  function renderSphereGridInto(target, basis, options) {
     var ground = spherePath(sphereStatic.horizon, basis);
     var horizon = sphereSplitPaths(sphereStatic.horizon, basis, 'sphere-horizon', false);
-    els.sphereGround.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
+    target.ground.innerHTML = '<circle class="sphere-rim" cx="0" cy="0" r="100"/>' +
       '<path class="sphere-ground" d="' + ground + 'Z"/>';
     var back = horizon.back;
     var front = horizon.front;
@@ -939,27 +929,55 @@
       back += html.back;
       front += html.front;
     });
-    els.sphereGridBack.innerHTML = back;
-    els.sphereGridFront.innerHTML = front;
-    renderSphereLabels(basis);
+    target.gridBack.innerHTML = back;
+    target.gridFront.innerHTML = front;
+    renderSphereLabelsInto(target, basis, options);
   }
   function renderSphereLabels(basis) {
+    renderSphereLabelsInto(sphereTargets(), basis, { zenith: true, observer: true });
+  }
+  function renderSphereLabelsInto(target, basis, options) {
     var html = '';
     sphereStatic.labels.forEach(function (item) {
       var p = sphereProject(item.v, basis);
       html += '<text class="sphere-label' + (p.front ? '' : ' sphere-back') + '" x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '">' + item.text + '</text>';
     });
-    var zen = sphereProject(sphereStatic.zenith, basis);
-    html += '<g class="sphere-zenith' + (zen.front ? '' : ' sphere-back') + '" transform="translate(' + zen.x.toFixed(1) + ' ' + zen.y.toFixed(1) + ')"><line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/></g>';
-    html += '<text class="sphere-note' + (zen.front ? '' : ' sphere-back') + '" x="' + zen.x.toFixed(1) + '" y="' + (zen.y - 8).toFixed(1) + '">Z</text>';
-    html += '<circle class="sphere-observer" cx="0" cy="0" r="3.2"/>';
-    els.sphereLabels.innerHTML = html;
+    if (options.zenith) {
+      var zen = sphereProject(sphereStatic.zenith, basis);
+      html += '<g class="sphere-zenith' + (zen.front ? '' : ' sphere-back') + '" transform="translate(' + zen.x.toFixed(1) + ' ' + zen.y.toFixed(1) + ')"><line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/></g>';
+      html += '<text class="sphere-note' + (zen.front ? '' : ' sphere-back') + '" x="' + zen.x.toFixed(1) + '" y="' + (zen.y - 8).toFixed(1) + '">Z</text>';
+    }
+    if (options.observer) html += '<circle class="sphere-observer" cx="0" cy="0" r="3.2"/>';
+    target.labels.innerHTML = html;
   }
   function renderSpherePaths(daily, basis) {
+    renderSpherePathsInto(sphereTargets(), daily, basis);
+  }
+  function renderSpherePathsInto(target, daily, basis) {
     var sun = sphereBodyPath(daily.sphereSun, basis, 'sun');
     var moon = sphereBodyPath(daily.sphereMoon, basis, 'moon');
-    els.spherePathsBack.innerHTML = sun.back + moon.back;
-    els.spherePathsFront.innerHTML = sun.front + moon.front;
+    target.pathsBack.innerHTML = sun.back + moon.back;
+    target.pathsFront.innerHTML = sun.front + moon.front;
+  }
+  function sphereTargets() {
+    return {
+      ground: els.sphereGround,
+      gridBack: els.sphereGridBack,
+      gridFront: els.sphereGridFront,
+      pathsBack: els.spherePathsBack,
+      pathsFront: els.spherePathsFront,
+      labels: els.sphereLabels
+    };
+  }
+  function mapSphereTargets() {
+    return {
+      ground: els.mapSphereGround,
+      gridBack: els.mapSphereGridBack,
+      gridFront: els.mapSphereGridFront,
+      pathsBack: els.mapSpherePathsBack,
+      pathsFront: els.mapSpherePathsFront,
+      labels: els.mapSphereLabels
+    };
   }
   function sphereBodyPath(samples, basis, kind) {
     var cls = kind === 'sun' ? 'sphere-path-sun' : 'sphere-path-moon';
