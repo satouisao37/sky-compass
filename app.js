@@ -5,7 +5,7 @@
   var mapStyleUrl = 'https://tiles.openfreemap.org/styles/liberty';
   var mapMinZoom = 4;
   var mapMaxZoom = 18;
-  var mapMinRadius = 40;
+  var mapMinRadius = 20;
   var mapMaxRadius = 160;
   var mapMaxTilt = 60;
   var state = {
