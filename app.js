@@ -165,6 +165,8 @@
         state.orientation.heading = smoothAngle(state.orientation.heading, heading, .22);
       }
       renderCompassRotation();
+      // 姿勢のみ(方位 null)のフレーム後に方位が戻っても文言が固着しないよう、成功時に復帰させる
+      if (state.compassOn && els.compassStatus.textContent !== '端末方位に追従') els.compassStatus.textContent = '端末方位に追従';
     } else if (typeof ev.webkitCompassHeading !== 'number' && typeof ev.alpha !== 'number') {
       // コンパスは来ているが初期化待ち(斜め上で開始した場合)は黙って次サンプルを待つ
       els.compassStatus.textContent = '方位が取得できません';
