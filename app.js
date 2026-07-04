@@ -113,6 +113,52 @@
     els.modeMapBtn.addEventListener('click', function () { setMode('map'); });
     bindSphereDrag();
     bindMapEvents();
+    bindModeSwipe();
+  }
+  // コンパス盤の横フリックで表示モードを前後に切り替える
+  var MODE_ORDER = ['2d', '3d', 'sphere', 'map'];
+  function bindModeSwipe() {
+    var wrap = els.skySvg.parentElement; // .compass-wrap
+    if (!wrap) return;
+    // 距離50px以上・速度0.35px/ms以上・水平優位(|dx|≥|dy|×1.7)の「速いフリック」のみ発火。
+    // 地図パン・天球回転のようなゆっくりドラッグは速度が足りず取られない
+    var MIN_DIST = 50, MIN_VEL = 0.35, H_RATIO = 1.7;
+    var startX = 0, startY = 0, startT = 0, tracking = false;
+    wrap.addEventListener('touchstart', function (ev) {
+      // スライダー・ボタン起点は除外(誤爆防止)、マルチタッチも無効
+      if (ev.touches.length !== 1 || ev.target.closest('input, button, .map-controls, .map-sliders')) {
+        tracking = false;
+        return;
+      }
+      var t = ev.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      startT = ev.timeStamp;
+      tracking = true;
+    }, { passive: true });
+    wrap.addEventListener('touchmove', function (ev) {
+      if (ev.touches.length > 1) tracking = false; // ピンチ等はキャンセル
+    }, { passive: true });
+    wrap.addEventListener('touchend', function (ev) {
+      if (!tracking) return;
+      tracking = false;
+      var t = ev.changedTouches[0];
+      var dx = t.clientX - startX;
+      var dy = t.clientY - startY;
+      var dt = ev.timeStamp - startT;
+      var vel = Math.abs(dx) / Math.max(dt, 1);
+      if (Math.abs(dx) < MIN_DIST || vel < MIN_VEL || Math.abs(dx) < Math.abs(dy) * H_RATIO) return;
+      switchModeBySwipe(dx < 0 ? 1 : -1); // 左フリック=次モード、右フリック=前モード
+    }, { passive: true });
+    wrap.addEventListener('touchcancel', function () { tracking = false; }, { passive: true });
+  }
+  function switchModeBySwipe(dir) {
+    var idx = MODE_ORDER.indexOf(state.mode);
+    if (idx < 0) return;
+    var next = Math.max(0, Math.min(MODE_ORDER.length - 1, idx + dir)); // 両端はクランプ
+    if (next === idx) return;
+    if (map) { try { map.stop(); } catch (e) {} } // 地図の慣性パン暴走を抑止
+    setMode(MODE_ORDER[next]);
   }
   function loadLoc() {
     try {
