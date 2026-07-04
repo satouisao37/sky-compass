@@ -175,6 +175,7 @@
     if (typeof ev.gamma === 'number') state.orientation.gamma = ev.gamma;
     updateDelta(ev);
     if (state.mode === '3d') request3dRender();
+    else if (state.mode === 'sphere' && state.compassOn) requestSphereRender();
   }
   function setMode(mode) {
     if (state.mode === 'sphere' && mode !== 'sphere') endSphereDrag();
@@ -350,7 +351,8 @@
       var dy = ev.clientY - state.sphere.lastY;
       state.sphere.lastX = ev.clientX;
       state.sphere.lastY = ev.clientY;
-      state.sphere.az = norm360(state.sphere.az + dx * .45);
+      // コンパス連動中は方位を端末向きが持つため横ドラッグは無効。仰角は常に調整可
+      if (!state.compassOn) state.sphere.az = norm360(state.sphere.az + dx * .45);
       state.sphere.el = Math.max(5, Math.min(85, state.sphere.el + dy * .28));
       requestSphereRender();
     });
@@ -385,7 +387,7 @@
     var tz = -date.getTimezoneOffset();
     var daily = getDaily(p, loc, tz);
     var basis = sphereBasis();
-    var viewKey = state.sphere.az.toFixed(2) + '|' + state.sphere.el.toFixed(2);
+    var viewKey = sphereViewAz().toFixed(2) + '|' + state.sphere.el.toFixed(2);
     var markerKey = [date.getTime(), loc.lat.toFixed(5), loc.lon.toFixed(5)].join('|');
     if (sphereRendered.view !== viewKey) renderSphereGrid(basis);
     if (sphereRendered.view !== viewKey || sphereRendered.daily !== daily.key) renderSpherePaths(daily, basis);
@@ -394,8 +396,13 @@
     sphereRendered.daily = daily.key;
     sphereRendered.marker = markerKey;
   }
+  // 天球の視点方位: コンパス連動ONかつ方位取得済みなら端末方位に追従(向いた方角の空が中央へ)、
+  // それ以外(北上固定 or 初期化前)はドラッグ値を使う。仰角(el)は常にドラッグ制御。
+  function sphereViewAz() {
+    return (state.compassOn && state.orientation.ready) ? norm360(state.heading) : state.sphere.az;
+  }
   function sphereBasis() {
-    var forward = azAltVector(state.sphere.az, state.sphere.el);
+    var forward = azAltVector(sphereViewAz(), state.sphere.el);
     var zenith = { x: 0, y: 0, z: 1 };
     var right = cross(zenith, forward);
     if (dot(right, right) < 1e-5) right = { x: 1, y: 0, z: 0 };
