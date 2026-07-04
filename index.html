@@ -9,6 +9,7 @@
   <title>スカイコンパス</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -90,25 +91,25 @@
           <g id="sphereLabels"></g>
         </svg>
         <div id="mapView" class="map-view hidden" aria-label="地図上の選択地点の天球">
-          <div id="mapSky" class="map-sky"></div>
-          <div id="mapTiles" class="map-tiles"></div>
-          <div id="mapFog" class="map-fog"></div>
+          <div id="mapCanvas" class="map-canvas"></div>
           <div id="mapMarker" class="map-marker" aria-hidden="true"></div>
-          <svg id="mapSphereSvg" class="map-sphere" viewBox="-120 -120 240 240" aria-hidden="true">
-            <defs>
-              <filter id="mapGlow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="2" result="blur"/>
-                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-            </defs>
-            <g id="mapSphereGround"></g>
-            <g id="mapSphereGridBack"></g>
-            <g id="mapSpherePathsBack"></g>
-            <g id="mapSphereGridFront"></g>
-            <g id="mapSpherePathsFront"></g>
-            <g id="mapSphereMarkers"></g>
-            <g id="mapSphereLabels"></g>
-          </svg>
+          <div id="mapSphereMarker" class="map-sphere-marker" aria-hidden="true">
+            <svg id="mapSphereSvg" class="map-sphere" viewBox="-120 -120 240 240">
+              <defs>
+                <filter id="mapGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <g id="mapSphereGround"></g>
+              <g id="mapSphereGridBack"></g>
+              <g id="mapSpherePathsBack"></g>
+              <g id="mapSphereGridFront"></g>
+              <g id="mapSpherePathsFront"></g>
+              <g id="mapSphereMarkers"></g>
+              <g id="mapSphereLabels"></g>
+            </svg>
+          </div>
           <div class="map-controls" aria-label="地図操作">
             <button id="mapZoomIn" type="button" aria-label="拡大">+</button>
             <button id="mapZoomOut" type="button" aria-label="縮小">−</button>
@@ -119,11 +120,10 @@
           </label>
           <label class="map-tilt-label" for="mapTiltInput">
             <span>傾き</span>
-            <input id="mapTiltInput" type="range" min="0" max="55" step="1" value="0">
+            <input id="mapTiltInput" type="range" min="0" max="60" step="1" value="0">
           </label>
           <div id="mapInfo" class="map-info"></div>
           <button id="mapUseBtn" class="map-use" type="button">この地点を使う</button>
-          <div class="map-credit">地理院タイル</div>
         </div>
         <div id="belowLabel" class="below-label"></div>
       </div>
@@ -150,10 +150,11 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.7.1</p>
+    <p class="app-version">スカイコンパス v0.8.0</p>
   </main>
 
-  <script src="astro.js"></script>
-  <script src="app.js"></script>
+  <script src="astro.js" defer></script>
+  <script src="vendor/maplibre-gl.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

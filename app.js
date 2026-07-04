@@ -2,17 +2,12 @@
   'use strict';
 
   var Tokyo = { lat: 35.6812, lon: 139.7671, acc: null };
-  var mapMaxLat = 85.05112878;
+  var mapStyleUrl = 'https://tiles.openfreemap.org/styles/liberty';
   var mapMinZoom = 4;
-  var mapMaxZoom = 17;
+  var mapMaxZoom = 18;
   var mapMinRadius = 40;
   var mapMaxRadius = 160;
-  var mapMaxTilt = 55;
-  var mapMaxTiles = 200;
-  var mapPerspectiveRatio = 1.45;
-  var mapTileUrl = 'https://cyberjapandata.gsi.go.jp/xyz/std/'; // 標準地図(路線・道路・地名が明瞭)
-  var mapShadeUrl = 'https://cyberjapandata.gsi.go.jp/xyz/hillshademap/'; // 陰影起伏図(地形の凹凸)
-  var mapShadeMaxZoom = 16; // 陰影起伏図の提供上限ズーム
+  var mapMaxTilt = 60;
   var state = {
     loc: loadLoc(),
     selectedDate: new Date(),
@@ -53,14 +48,19 @@
   var ref3dSize = '';
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
-  var mapRendered = { tiles: '', view: '', daily: '', marker: '' };
+  var mapRendered = { view: '', daily: '', marker: '' };
+  var map = null;
+  var mapSelectedMarker = null;
+  var mapSphereMarker = null;
+  var mapSaveTimer = null;
+  var mapInitFailed = false;
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapSky','mapTiles','mapFog','mapMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','mapUseBtn','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapInfo','mapUseBtn','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     initMapState();
@@ -91,7 +91,15 @@
     els.timeSlider.addEventListener('input', function () { state.manual = true; applyDateAndSlider(); });
     els.declinationInput.addEventListener('change', function () { state.declination = Number(els.declinationInput.value || 0); localStorage.setItem('declination', String(state.declination)); render(); });
     els.applyLocBtn.addEventListener('click', function () {
-      state.loc = { lat: Number(els.latInput.value), lon: Number(els.lonInput.value), acc: null };
+      var lat = Number(els.latInput.value);
+      var lon = Number(els.lonInput.value);
+      state.loc = {
+        lat: isFinite(lat) ? clampLat(lat) : state.loc.lat,
+        lon: isFinite(lon) ? clampLon(lon) : state.loc.lon,
+        acc: null
+      };
+      els.latInput.value = state.loc.lat.toFixed(4);
+      els.lonInput.value = state.loc.lon.toFixed(4);
       saveLoc(state.loc);
       render();
     });
@@ -106,7 +114,7 @@
   function loadLoc() {
     try {
       var saved = JSON.parse(localStorage.getItem('lastLocation') || 'null');
-      if (saved && isFinite(saved.lat) && isFinite(saved.lon)) return saved;
+      if (saved && isFinite(saved.lat) && isFinite(saved.lon)) return sanitizeLoc(saved, Tokyo, false);
     } catch (e) {}
     return Tokyo;
   }
@@ -123,9 +131,6 @@
       zoom: 12,
       radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
       tilt: 0,
-      pointers: {},
-      drag: null,
-      pinch: null,
       raf: null
     };
     try {
@@ -146,34 +151,42 @@
     try { saved = !!localStorage.getItem('mapView'); } catch (e) {}
     if (!saved) resetMapToLoc();
     els.mapRadiusInput.value = String(state.map.radius);
-    els.mapTiltInput.value = String(state.map.tilt);
+    els.mapTiltInput.value = String(Math.round(state.map.tilt));
   }
   function validLoc(loc) {
-    return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -mapMaxLat && loc.lat <= mapMaxLat && loc.lon >= -180 && loc.lon <= 180;
+    return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -90 && loc.lat <= 90 && loc.lon >= -180 && loc.lon <= 180;
   }
   function saveMapState() {
     try {
       localStorage.setItem('mapSphereRadius', String(state.map.radius));
       localStorage.setItem('mapView', JSON.stringify({
-        center: state.map.center,
-        selected: state.map.selected,
+        center: sanitizeLoc(state.map.center, Tokyo, true),
+        selected: sanitizeLoc(state.map.selected, state.map.center, true),
         zoom: state.map.zoom,
         tilt: state.map.tilt
       }));
     } catch (e) {}
   }
+  function scheduleSaveMapState() {
+    if (mapSaveTimer) clearTimeout(mapSaveTimer);
+    mapSaveTimer = setTimeout(function () {
+      mapSaveTimer = null;
+      saveMapState();
+    }, 300);
+  }
   function hasSavedMapView() {
     try { return !!localStorage.getItem('mapView'); } catch (e) { return false; }
   }
   function resetMapToLoc() {
-    state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
-    state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+    state.map.center = sanitizeLoc(state.loc, Tokyo, false);
+    state.map.selected = sanitizeLoc(state.loc, Tokyo, false);
     state.map.zoom = 12;
     state.map.tilt = 0;
     mapRendered.daily = '';
     mapRendered.marker = '';
     mapRendered.view = '';
-    mapRendered.tiles = '';
+    syncMapCamera();
+    syncMapMarkers();
   }
   function locate(fromTap) {
     if (!navigator.geolocation) {
@@ -258,7 +271,6 @@
   }
   function setMode(mode) {
     if (state.mode === 'sphere' && mode !== 'sphere') endSphereDrag();
-    if (state.mode === 'map' && mode !== 'map') endMapGesture();
     state.mode = mode;
     els.mode2dBtn.classList.toggle('active', mode === '2d');
     els.mode3dBtn.classList.toggle('active', mode === '3d');
@@ -277,7 +289,11 @@
     if (mode === '3d') start3dLoop();
     else stop3dLoop();
     if (mode === 'sphere') renderSphere();
-    if (mode === 'map') requestMapRender();
+    if (mode === 'map') {
+      ensureMap();
+      if (map) map.resize();
+      requestMapRender();
+    }
   }
   function ymd(date) {
     return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
@@ -427,19 +443,24 @@
     return polar(pos.az, r);
   }
   function bindMapEvents() {
-    els.mapZoomIn.addEventListener('click', function () { zoomMapAtCenter(1); });
-    els.mapZoomOut.addEventListener('click', function () { zoomMapAtCenter(-1); });
+    els.mapZoomIn.addEventListener('click', function () { ensureMap(); if (map) map.zoomIn(); });
+    els.mapZoomOut.addEventListener('click', function () { ensureMap(); if (map) map.zoomOut(); });
     els.mapRadiusInput.addEventListener('input', function () {
       state.map.radius = clampMapRadius(Number(els.mapRadiusInput.value) || 90);
-      saveMapState();
+      scheduleSaveMapState();
       requestMapRender();
     });
     els.mapTiltInput.addEventListener('input', function () {
       state.map.tilt = clampMapTilt(Number(els.mapTiltInput.value) || 0);
-      mapRendered.tiles = '';
       mapRendered.view = '';
-      saveMapState();
-      requestMapRender();
+      ensureMap();
+      if (map) {
+        map.setPitch(state.map.tilt);
+        scheduleSaveMapState();
+      } else {
+        scheduleSaveMapState();
+        requestMapRender();
+      }
     });
     els.mapUseBtn.addEventListener('click', function () {
       state.loc = { lat: state.map.selected.lat, lon: state.map.selected.lon, acc: null };
@@ -448,150 +469,94 @@
       els.lonInput.value = state.loc.lon.toFixed(4);
       render();
     });
-    els.mapView.addEventListener('pointerdown', mapPointerDown);
-    els.mapView.addEventListener('pointermove', mapPointerMove);
-    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (type) {
-      els.mapView.addEventListener(type, mapPointerUp);
-    });
-    window.addEventListener('resize', function () { if (state.mode === 'map') { mapRendered.tiles = ''; requestMapRender(); } });
+    window.addEventListener('resize', function () { if (state.mode === 'map' && map) map.resize(); });
+    // CDP実動検証用
+    window.__mapDebug = function () {
+      return map ? { zoom: map.getZoom(), pitch: map.getPitch(), center: map.getCenter(), loaded: map.loaded() } : null;
+    };
   }
-  function mapPointerDown(ev) {
-    // 情報パネルは pointer-events を生かしたまま除外する(none にするとタップが地図へ素通しして裏の地点を選択してしまう)
-    if (ev.target.closest('.map-controls') || ev.target.closest('.map-radius-label') || ev.target.closest('.map-tilt-label') || ev.target.closest('.map-info') || ev.target === els.mapUseBtn) return;
-    ev.preventDefault();
-    els.mapView.setPointerCapture(ev.pointerId);
-    state.map.pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, startX: ev.clientX, startY: ev.clientY };
-    var ids = mapPointerIds();
-    if (ids.length === 1) {
-      beginMapDrag(ev.pointerId, false);
-      state.map.pinch = null;
-    } else if (ids.length === 2) {
-      beginMapPinch(ids);
-    }
-  }
-  function mapPointerMove(ev) {
-    var p = state.map.pointers[ev.pointerId];
-    if (!p) return;
-    p.x = ev.clientX;
-    p.y = ev.clientY;
-    var ids = mapPointerIds();
-    if (ids.length >= 2 && state.map.pinch) {
-      updateMapPinch(ids);
-      return;
-    }
-    if (!state.map.drag || ev.pointerId !== state.map.drag.pointerId) return;
-    var dx = ev.clientX - p.startX;
-    var dy = ev.clientY - p.startY;
-    if (Math.sqrt(dx * dx + dy * dy) > 8) state.map.drag.moved = true;
-    var rect = els.mapView.getBoundingClientRect();
-    var plane = screenToMapPlaneClamped(clientOffset(ev.clientX, ev.clientY, rect), rect);
-    var next = { x: state.map.drag.grabWorld.x - plane.x, y: state.map.drag.grabWorld.y - plane.y };
-    state.map.center = worldToLoc(next, state.map.zoom);
-    requestMapRender();
-  }
-  function mapPointerUp(ev) {
-    var p = state.map.pointers[ev.pointerId];
-    var wasPinch = !!state.map.pinch;
-    delete state.map.pointers[ev.pointerId];
+  function ensureMap() {
+    if (map || mapInitFailed || !window.maplibregl) return;
+    state.map.center = sanitizeLoc(state.map.center, Tokyo, true);
+    state.map.selected = sanitizeLoc(state.map.selected, state.map.center, true);
     try {
-      if (els.mapView.hasPointerCapture(ev.pointerId)) els.mapView.releasePointerCapture(ev.pointerId);
-    } catch (e) {}
-    if (p && state.map.drag && ev.pointerId === state.map.drag.pointerId && !state.map.drag.moved && !wasPinch) {
-      var dx = ev.clientX - p.startX;
-      var dy = ev.clientY - p.startY;
-      if (Math.sqrt(dx * dx + dy * dy) < 8) {
-        var loc = clientToMapLoc(ev.clientX, ev.clientY);
-        if (loc) {
-          state.map.selected = loc;
-          mapRendered.daily = '';
-          mapRendered.marker = '';
-          requestMapRender();
-        }
-      }
-    }
-    var ids = mapPointerIds();
-    state.map.drag = null;
-    if (ids.length === 2) beginMapPinch(ids);
-    else if (ids.length === 1) beginMapDrag(ids[0], true);
-    else state.map.pinch = null;
-    saveMapState();
-  }
-  function mapPointerIds() {
-    return Object.keys(state.map.pointers);
-  }
-  function beginMapDrag(pointerId, moved) {
-    var p = state.map.pointers[pointerId];
-    if (!p) return;
-    var rect = els.mapView.getBoundingClientRect();
-    var center = locToWorld(state.map.center, state.map.zoom);
-    var plane = screenToMapPlane(clientOffset(p.x, p.y, rect), rect);
-    p.startX = p.x;
-    p.startY = p.y;
-    state.map.drag = {
-      pointerId: Number(pointerId),
-      grabWorld: plane ? { x: center.x + plane.x, y: center.y + plane.y } : center,
-      moved: moved
-    };
-    state.map.pinch = null;
-  }
-  function beginMapPinch(ids) {
-    var a = state.map.pointers[ids[0]];
-    var b = state.map.pointers[ids[1]];
-    state.map.pinch = {
-      dist: mapDist(a, b),
-      midX: (a.x + b.x) / 2,
-      midY: (a.y + b.y) / 2
-    };
-    state.map.drag = null;
-  }
-  function updateMapPinch(ids) {
-    var a = state.map.pointers[ids[0]];
-    var b = state.map.pointers[ids[1]];
-    var dist = mapDist(a, b);
-    if (!state.map.pinch || !dist) return;
-    if (state.map.pinch.dist <= 0) {
-      beginMapPinch(ids);
-      return;
-    }
-    var ratio = dist / state.map.pinch.dist;
-    if (ratio > 1.25) {
-      zoomMapAt(state.map.pinch.midX, state.map.pinch.midY, state.map.zoom + 1);
-      beginMapPinch(ids);
-    } else if (ratio < .8) {
-      zoomMapAt(state.map.pinch.midX, state.map.pinch.midY, state.map.zoom - 1);
-      beginMapPinch(ids);
+      createMap();
+    } catch (e) {
+      // WebGL が使えない環境では Map 生成が投げる。毎フレーム再試行して例外を吐き続けないよう一度で諦める
+      mapInitFailed = true;
+      if (map) { try { map.remove(); } catch (e2) {} }
+      map = null;
+      els.mapInfo.textContent = 'この端末では地図を表示できません(WebGL が無効です)';
     }
   }
-  function mapDist(a, b) {
-    var dx = a.x - b.x;
-    var dy = a.y - b.y;
-    return Math.sqrt(dx * dx + dy * dy);
+  function createMap() {
+    map = new maplibregl.Map({
+      container: els.mapCanvas,
+      style: mapStyleUrl,
+      center: [state.map.center.lon, state.map.center.lat],
+      zoom: state.map.zoom,
+      pitch: state.map.tilt,
+      minZoom: mapMinZoom,
+      maxZoom: mapMaxZoom,
+      maxPitch: mapMaxTilt,
+      dragRotate: false,
+      pitchWithRotate: false
+    });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    mapSelectedMarker = makeViewportMarker(els.mapMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
+    mapSphereMarker = makeViewportMarker(els.mapSphereMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
+    map.on('click', function (ev) {
+      state.map.selected = { lat: clampLat(ev.lngLat.lat), lon: wrapLon(ev.lngLat.lng) };
+      mapRendered.daily = '';
+      mapRendered.marker = '';
+      syncMapMarkers();
+      scheduleSaveMapState();
+      requestMapRender();
+    });
+    map.on('moveend', function () {
+      syncMapStateFromCamera(false);
+      scheduleSaveMapState();
+    });
+    map.on('pitch', function () {
+      syncMapStateFromCamera(true);
+      requestMapRender();
+    });
+    map.on('pitchend', function () {
+      syncMapStateFromCamera(true);
+      scheduleSaveMapState();
+    });
+    map.on('load', requestMapRender);
   }
-  function zoomMapAtCenter(delta) {
-    var rect = els.mapView.getBoundingClientRect();
-    zoomMapAt(rect.left + rect.width / 2, rect.top + rect.height / 2, state.map.zoom + delta);
+  function makeViewportMarker(element) {
+    return new maplibregl.Marker({
+      element: element,
+      anchor: 'center',
+      pitchAlignment: 'viewport',
+      rotationAlignment: 'viewport'
+    });
   }
-  function zoomMapAt(clientX, clientY, zoom) {
-    zoom = clampMapZoom(zoom);
-    if (zoom === state.map.zoom) return;
-    var anchor = clientToMapLoc(clientX, clientY);
-    if (!anchor) return;
-    var rect = els.mapView.getBoundingClientRect();
-    var plane = screenToMapPlane(clientOffset(clientX, clientY, rect), rect);
-    if (!plane) return;
-    var anchorPx = locToWorld(anchor, zoom);
-    state.map.zoom = zoom;
-    state.map.center = worldToLoc({ x: anchorPx.x - plane.x, y: anchorPx.y - plane.y }, zoom);
-    mapRendered.tiles = '';
-    saveMapState();
-    requestMapRender();
+  function syncMapStateFromCamera(syncTiltInput) {
+    if (!map) return;
+    var center = map.getCenter();
+    state.map.center = { lat: clampLat(center.lat), lon: wrapLon(center.lng) };
+    state.map.zoom = map.getZoom();
+    state.map.tilt = clampMapTilt(map.getPitch());
+    if (syncTiltInput) els.mapTiltInput.value = String(Math.round(state.map.tilt));
   }
-  function clientToMapLoc(clientX, clientY) {
-    var rect = els.mapView.getBoundingClientRect();
-    var center = locToWorld(state.map.center, state.map.zoom);
-    var plane = screenToMapPlane(clientOffset(clientX, clientY, rect), rect);
-    if (!plane) return null;
-    return worldToLoc({ x: center.x + plane.x, y: center.y + plane.y }, state.map.zoom);
+  function syncMapCamera() {
+    if (!map) return;
+    map.jumpTo({
+      center: [state.map.center.lon, state.map.center.lat],
+      zoom: state.map.zoom,
+      pitch: state.map.tilt
+    });
+  }
+  function syncMapMarkers() {
+    if (!mapSelectedMarker || !mapSphereMarker) return;
+    var lngLat = [state.map.selected.lon, state.map.selected.lat];
+    mapSelectedMarker.setLngLat(lngLat);
+    mapSphereMarker.setLngLat(lngLat);
   }
   function requestMapRender() {
     if (state.mode !== 'map' || state.map.raf) return;
@@ -602,171 +567,39 @@
   }
   function renderMap() {
     if (state.mode !== 'map') return;
-    var rect = els.mapView.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    var center = locToWorld(state.map.center, state.map.zoom);
-    renderMapTiles(rect, center);
-    renderMapOverlay(rect, center);
+    ensureMap();
+    renderMapOverlay();
   }
-  function renderMapTiles(rect, center) {
-    var z = state.map.zoom;
-    var metrics = mapTiltMetrics(rect);
-    var left = center.x - rect.width / 2;
-    var top = center.y - rect.height / 2;
-    var max = Math.pow(2, z);
-    var bounds = mapVisiblePlaneBounds(rect, metrics);
-    var x1 = Math.floor((center.x + bounds.minX) / 256) - 1;
-    var x2 = Math.floor((center.x + bounds.maxX) / 256) + 1;
-    var y1 = Math.max(0, Math.floor((center.y + bounds.minY) / 256) - 1);
-    var y2 = Math.min(max - 1, Math.floor((center.y + bounds.maxY) / 256) + 1);
-    var limited = limitMapTileRange(x1, x2, y1, y2, center);
-    x1 = limited.x1;
-    x2 = limited.x2;
-    y1 = limited.y1;
-    y2 = limited.y2;
-    els.mapView.classList.toggle('tilted', state.map.tilt > 0);
-    els.mapView.style.setProperty('--map-fog-opacity', String(Math.min(.82, state.map.tilt / mapMaxTilt * .72)));
-    if (state.map.tilt) {
-      els.mapTiles.style.transform = 'perspective(' + metrics.perspective.toFixed(1) + 'px) rotateX(' + state.map.tilt.toFixed(1) + 'deg) translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
-    } else {
-      els.mapTiles.style.transform = 'translate(' + (-left).toFixed(1) + 'px,' + (-top).toFixed(1) + 'px)';
-    }
-    var key = [z, x1, x2, y1, y2, Math.round(rect.width), Math.round(rect.height), state.map.tilt, Math.round(metrics.perspective)].join('|');
-    if (mapRendered.tiles === key) return;
-    mapRendered.tiles = key;
-    els.mapTiles.innerHTML = '';
-    for (var x = x1; x <= x2; x++) {
-      for (var y = y1; y <= y2; y++) {
-        var tx = ((x % max) + max) % max;
-        appendMapTile(mapTileUrl, z, tx, x, y, '');
-        // 陰影起伏を multiply で重ねて Google マップ地形風の起伏を出す(提供ズーム内のみ)
-        if (z <= mapShadeMaxZoom) appendMapTile(mapShadeUrl, z, tx, x, y, 'tile-shade');
-      }
-    }
-  }
-  function appendMapTile(base, z, tx, x, y, cls) {
-    var img = document.createElement('img');
-    img.alt = '';
-    img.draggable = false;
-    if (cls) img.className = cls;
-    img.src = base + z + '/' + tx + '/' + y + '.png';
-    img.style.left = (x * 256) + 'px';
-    img.style.top = (y * 256) + 'px';
-    img.onerror = function () { this.classList.add('missing'); };
-    els.mapTiles.appendChild(img);
-  }
-  function renderMapOverlay(rect, center) {
-    var pos = mapScreenPoint(state.map.selected, rect, center);
+  function renderMapOverlay() {
+    if (mapInitFailed) return; // 失敗メッセージを毎秒の再描画で上書きしない
     var r = state.map.radius;
     els.mapSphereSvg.style.width = (r * 2) + 'px';
     els.mapSphereSvg.style.height = (r * 2) + 'px';
-    if (pos) {
-      els.mapMarker.style.transform = 'translate(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px)';
-      els.mapSphereSvg.style.transform = 'translate(' + (pos.x - r).toFixed(1) + 'px,' + (pos.y - r).toFixed(1) + 'px)';
-    } else {
-      els.mapMarker.style.transform = 'translate(-999px,-999px)';
-      els.mapSphereSvg.style.transform = 'translate(-999px,-999px)';
-    }
+    syncMapMarkers();
     var date = state.selectedDate;
     var tz = -date.getTimezoneOffset();
     var p = ymd(date);
     var daily = getDaily(p, state.map.selected, tz);
     var basis = mapSphereBasis();
-    var viewKey = state.map.tilt.toFixed(2);
+    var viewKey = String(Math.round(state.map.tilt));
     if (mapRendered.view !== viewKey) renderMapSphereGrid(basis);
     if (mapRendered.view !== viewKey || mapRendered.daily !== daily.key) renderMapSpherePaths(daily, basis);
     var markerKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5), viewKey].join('|');
+    if (mapRendered.marker === markerKey) {
+      mapRendered.view = viewKey;
+      mapRendered.daily = daily.key;
+      return;
+    }
     var sun = Astro.sunPosition(date, state.map.selected.lat, state.map.selected.lon);
     var moon = Astro.moonPosition(date, state.map.selected.lat, state.map.selected.lon);
     var illum = Astro.moonIllumination(date);
-    if (mapRendered.marker !== markerKey) renderMapSphereMarkers(sun, moon, illum, basis);
+    renderMapSphereMarkers(sun, moon, illum, basis);
     els.mapInfo.textContent = state.map.selected.lat.toFixed(5) + ', ' + state.map.selected.lon.toFixed(5) +
       ' / 太陽 ' + degDir(sun.az) + ' 高度 ' + sun.alt.toFixed(1) + '度' +
       ' / 月 ' + degDir(moon.az) + ' 高度 ' + moon.alt.toFixed(1) + '度';
     mapRendered.view = viewKey;
     mapRendered.daily = daily.key;
     mapRendered.marker = markerKey;
-  }
-  function mapScreenPoint(loc, rect, center) {
-    var p = locToWorld(loc, state.map.zoom);
-    var projected = mapPlaneToScreen({ x: p.x - center.x, y: p.y - center.y }, rect);
-    if (!projected) return null;
-    return { x: projected.x + rect.width / 2, y: projected.y + rect.height / 2 };
-  }
-  function clientOffset(clientX, clientY, rect) {
-    return { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 };
-  }
-  function mapTiltMetrics(rect) {
-    var tiltRad = clampMapTilt(state.map.tilt) * Math.PI / 180;
-    return {
-      perspective: Math.max(1, rect.height * mapPerspectiveRatio),
-      tiltRad: tiltRad,
-      sin: Math.sin(tiltRad),
-      cos: Math.cos(tiltRad)
-    };
-  }
-  function screenToMapPlane(screen, rect) {
-    var m = mapTiltMetrics(rect);
-    var denom = m.cos + screen.y * m.sin / m.perspective;
-    if (denom <= 1e-3) return null;
-    var y = screen.y / denom;
-    var w = 1 - y * m.sin / m.perspective;
-    if (w <= 1e-3) return null;
-    return { x: screen.x * w, y: y };
-  }
-  function screenToMapPlaneClamped(screen, rect) {
-    var plane = screenToMapPlane(screen, rect);
-    if (plane) return plane;
-    var m = mapTiltMetrics(rect);
-    var y = mapFarPlaneY(rect, m);
-    var w = 1 - y * m.sin / m.perspective;
-    return { x: screen.x * w, y: y };
-  }
-  function mapPlaneToScreen(plane, rect) {
-    var m = mapTiltMetrics(rect);
-    var w = 1 - plane.y * m.sin / m.perspective;
-    if (w <= 1e-3) return null;
-    return { x: plane.x / w, y: plane.y * m.cos / w };
-  }
-  function mapVisiblePlaneBounds(rect, metrics) {
-    var corners = [
-      { x: -rect.width / 2, y: -rect.height / 2 },
-      { x: rect.width / 2, y: -rect.height / 2 },
-      { x: rect.width / 2, y: rect.height / 2 },
-      { x: -rect.width / 2, y: rect.height / 2 }
-    ];
-    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    var farY = mapFarPlaneY(rect, metrics);
-    corners.forEach(function (screen) {
-      var plane = screenToMapPlane(screen, rect);
-      if (!plane) {
-        plane = { y: farY };
-        plane.x = screen.x * (1 - plane.y * metrics.sin / metrics.perspective);
-      }
-      minX = Math.min(minX, plane.x);
-      maxX = Math.max(maxX, plane.x);
-      minY = Math.min(minY, plane.y);
-      maxY = Math.max(maxY, plane.y);
-    });
-    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
-  }
-  function mapFarPlaneY(rect, metrics) {
-    return metrics.sin > 1e-5 ? -metrics.perspective / Math.tan(metrics.tiltRad) * .98 : -rect.height / 2;
-  }
-  function limitMapTileRange(x1, x2, y1, y2, center) {
-    var cxT = center.x / 256;
-    var cyT = center.y / 256;
-    while ((x2 - x1 + 1) * (y2 - y1 + 1) > mapMaxTiles) {
-      if (y2 - y1 >= x2 - x1 && y1 < y2) {
-        if (Math.abs(y1 - cyT) >= Math.abs(y2 - cyT)) y1++;
-        else y2--;
-      }
-      else if (x1 < x2) {
-        if (Math.abs(x1 - cxT) >= Math.abs(x2 - cxT)) x1++;
-        else x2--;
-      } else break;
-    }
-    return { x1: x1, x2: x2, y1: y1, y2: y2 };
   }
   function mapSphereBasis() {
     return basisFromForward(azAltVector(180, 90 - state.map.tilt));
@@ -791,47 +624,29 @@
       '<circle class="sphere-sun-now' + (sun.alt < 0 ? ' sphere-below' : '') + (sp.front ? '' : ' sphere-back') + '" cx="' + sp.x.toFixed(1) + '" cy="' + sp.y.toFixed(1) + '" r="5.2"/>' +
       '<g class="' + (moon.alt < 0 ? 'sphere-below ' : '') + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.rx.toFixed(1) + '" ry="4.7"/></g>';
   }
-  function locToWorld(loc, z) {
-    var lat = Math.max(-mapMaxLat, Math.min(mapMaxLat, loc.lat));
-    var sin = Math.sin(lat * Math.PI / 180);
-    var scale = 256 * Math.pow(2, z);
-    return {
-      x: (loc.lon + 180) / 360 * scale,
-      y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale
-    };
-  }
-  function worldToLoc(p, z) {
-    var scale = 256 * Math.pow(2, z);
-    var lon = p.x / scale * 360 - 180;
-    var n = Math.PI - 2 * Math.PI * p.y / scale;
-    var lat = Math.atan(Math.sinh(n)) * 180 / Math.PI;
-    lon = ((lon + 540) % 360) - 180;
-    return { lat: Math.max(-mapMaxLat, Math.min(mapMaxLat, lat)), lon: lon };
-  }
-  function endMapGesture() {
-    if (state.map.drag || state.map.pinch || mapPointerIds().length) saveMapState();
-    mapPointerIds().forEach(function (id) {
-      try {
-        if (els.mapView.hasPointerCapture(Number(id))) els.mapView.releasePointerCapture(Number(id));
-      } catch (e) {}
-    });
-    state.map.pointers = {};
-    state.map.drag = null;
-    state.map.pinch = null;
-    if (state.map.raf) {
-      cancelAnimationFrame(state.map.raf);
-      state.map.raf = null;
-      mapRendered.tiles = '';
-    }
-  }
   function clampMapZoom(zoom) {
-    return Math.max(mapMinZoom, Math.min(mapMaxZoom, Math.round(zoom)));
+    return Math.max(mapMinZoom, Math.min(mapMaxZoom, zoom));
   }
   function clampMapRadius(radius) {
     return Math.max(mapMinRadius, Math.min(mapMaxRadius, Math.round(radius)));
   }
   function clampMapTilt(tilt) {
-    return Math.max(0, Math.min(mapMaxTilt, Math.round(tilt)));
+    return Math.max(0, Math.min(mapMaxTilt, tilt));
+  }
+  function clampLat(lat) {
+    return Math.max(-90, Math.min(90, lat));
+  }
+  function clampLon(lon) {
+    return Math.max(-180, Math.min(180, lon));
+  }
+  function wrapLon(lon) {
+    return ((lon + 540) % 360) - 180;
+  }
+  function sanitizeLoc(loc, fallback, wrap) {
+    fallback = fallback || Tokyo;
+    var lat = loc && isFinite(loc.lat) ? loc.lat : fallback.lat;
+    var lon = loc && isFinite(loc.lon) ? loc.lon : fallback.lon;
+    return { lat: clampLat(lat), lon: wrap ? wrapLon(lon) : clampLon(lon) };
   }
   function bindSphereDrag() {
     els.sphereSvg.addEventListener('pointerdown', function (ev) {
