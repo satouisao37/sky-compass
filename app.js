@@ -499,7 +499,7 @@
     p.startX = p.x;
     p.startY = p.y;
     state.map.drag = {
-      pointerId: pointerId,
+      pointerId: Number(pointerId),
       centerPx: locToWorld(state.map.center, state.map.zoom),
       moved: moved
     };
