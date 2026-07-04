@@ -56,8 +56,9 @@ main { max-width: 620px; margin: 0 auto; }
 .map-view.hidden { display: none; }
 .map-canvas { position: absolute; inset: 0; }
 #mapView > .map-marker, #mapView > .map-sphere-marker { display: none; }
-.map-marker { width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; }
-.map-sphere-marker { display: block; pointer-events: none; }
+/* Marker は毎フレーム transform されるため合成レイヤに昇格させる(Safari の再ラスタライズによるカクつき対策) */
+.map-marker { width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; will-change: transform; }
+.map-sphere-marker { display: block; pointer-events: none; will-change: transform; }
 .map-sphere { display: block; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .48); box-shadow: 0 0 0 1px rgba(16, 20, 24, .75), 0 8px 22px rgba(0, 0, 0, .28); pointer-events: none; }
 .map-sphere .sphere-ground { fill: rgba(17, 25, 32, .34); }
 .map-sphere .sphere-rim { stroke: rgba(237, 244, 247, .58); }

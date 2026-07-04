@@ -359,7 +359,9 @@
     renderCompassRotation();
     if (state.mode === '3d') request3dRender();
     if (state.mode === 'sphere') requestSphereRender();
-    if (state.mode === 'map') requestMapRender();
+    // 地図操作(パン/ズーム)中は時計駆動の DOM 書込を止める(ドーム内容は selected/日時/pitch にのみ依存し、
+    // パン/ズームでは変わらない。操作が終われば次の秒 tick で追いつく)
+    if (state.mode === 'map' && (!map || !map.isMoving())) requestMapRender();
   }
   function renderCompassRotation() {
     var rot = state.compassOn ? -state.heading : 0;
@@ -542,7 +544,11 @@
     state.map.center = { lat: clampLat(center.lat), lon: wrapLon(center.lng) };
     state.map.zoom = map.getZoom();
     state.map.tilt = clampMapTilt(map.getPitch());
-    if (syncTiltInput) els.mapTiltInput.value = String(Math.round(state.map.tilt));
+    if (syncTiltInput) {
+      var tiltValue = String(Math.round(state.map.tilt));
+      // pitch イベント毎の無条件代入はレイアウトを誘発するため、丸め値が変わったときだけ書く
+      if (els.mapTiltInput.value !== tiltValue) els.mapTiltInput.value = tiltValue;
+    }
   }
   function syncMapCamera() {
     if (!map) return;
