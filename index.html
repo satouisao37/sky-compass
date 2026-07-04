@@ -90,7 +90,9 @@
           <g id="sphereLabels"></g>
         </svg>
         <div id="mapView" class="map-view hidden" aria-label="地図上の選択地点の天球">
+          <div id="mapSky" class="map-sky"></div>
           <div id="mapTiles" class="map-tiles"></div>
+          <div id="mapFog" class="map-fog"></div>
           <div id="mapMarker" class="map-marker" aria-hidden="true"></div>
           <svg id="mapSphereSvg" class="map-sphere" viewBox="-120 -120 240 240" aria-hidden="true">
             <defs>
@@ -99,18 +101,13 @@
                 <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
             </defs>
-            <circle class="horizon" cx="0" cy="0" r="100"/>
-            <g id="mapTicks"></g>
-            <circle class="map-alt-ring" cx="0" cy="0" r="66.7"/>
-            <circle class="map-alt-ring" cx="0" cy="0" r="33.3"/>
-            <g class="cardinals">
-              <text x="0" y="-104">N</text><text x="104" y="4">E</text>
-              <text x="0" y="112">S</text><text x="-104" y="4">W</text>
-            </g>
-            <g id="mapSunPath"></g>
-            <g id="mapMoonPath"></g>
-            <g id="mapSunMarker"></g>
-            <g id="mapMoonMarker"></g>
+            <g id="mapSphereGround"></g>
+            <g id="mapSphereGridBack"></g>
+            <g id="mapSpherePathsBack"></g>
+            <g id="mapSphereGridFront"></g>
+            <g id="mapSpherePathsFront"></g>
+            <g id="mapSphereMarkers"></g>
+            <g id="mapSphereLabels"></g>
           </svg>
           <div class="map-controls" aria-label="地図操作">
             <button id="mapZoomIn" type="button" aria-label="拡大">+</button>
@@ -119,6 +116,10 @@
           <label class="map-radius-label" for="mapRadiusInput">
             <span>天球</span>
             <input id="mapRadiusInput" type="range" min="40" max="160" step="1" value="90">
+          </label>
+          <label class="map-tilt-label" for="mapTiltInput">
+            <span>傾き</span>
+            <input id="mapTiltInput" type="range" min="0" max="55" step="1" value="0">
           </label>
           <div id="mapInfo" class="map-info"></div>
           <button id="mapUseBtn" class="map-use" type="button">この地点を使う</button>
@@ -149,7 +150,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.6.0</p>
+    <p class="app-version">スカイコンパス v0.7.0</p>
   </main>
 
   <script src="astro.js"></script>

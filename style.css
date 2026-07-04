@@ -52,19 +52,27 @@ main { max-width: 620px; margin: 0 auto; }
 .sphere-label { fill: var(--text); font-size: 10px; text-anchor: middle; dominant-baseline: middle; font-weight: 700; text-shadow: 0 1px 4px #000; }
 .sphere-note { fill: var(--muted); font-size: 8px; text-anchor: middle; }
 .sphere-label, .sphere-note, .sphere-zenith, .sphere-observer { pointer-events: none; }
-.map-view { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #d8ddd9; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.map-view { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: linear-gradient(#16222b 0%, #31444d 34%, #d8ddd9 35%, #d8ddd9 100%); touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .map-view.hidden { display: none; }
-.map-tiles { position: absolute; inset: 0; background: #d8ddd9; }
+.map-sky { position: absolute; inset: 0; background: linear-gradient(#111920 0%, #223640 48%, #7d928f 74%, #d8ddd9 100%); opacity: 0; pointer-events: none; transition: opacity .12s linear; z-index: 0; }
+.map-view.tilted .map-sky { opacity: 1; }
+.map-tiles { position: absolute; inset: 0; background: #d8ddd9; transform-origin: 50% 50%; z-index: 1; }
 .map-tiles img { position: absolute; width: 256px; height: 256px; max-width: none; background: #d8ddd9; }
 .map-tiles img.missing { opacity: 0; }
+.map-fog { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(216, 221, 217, .88) 0%, rgba(216, 221, 217, .54) 26%, rgba(216, 221, 217, 0) 58%); opacity: 0; pointer-events: none; transition: opacity .12s linear; z-index: 2; }
+.map-view.tilted .map-fog { opacity: var(--map-fog-opacity, .6); }
 .map-marker { position: absolute; left: 0; top: 0; width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; transform: translate(-999px, -999px); margin: -6px 0 0 -6px; z-index: 3; }
-.map-sphere { position: absolute; left: 0; top: 0; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .82); box-shadow: 0 0 0 1px rgba(16, 20, 24, .85), 0 8px 22px rgba(0, 0, 0, .35); pointer-events: none; z-index: 2; }
-.map-sphere .horizon { fill: rgba(17, 25, 32, .68); }
-.map-alt-ring { fill: none; stroke: rgba(153, 168, 176, .55); stroke-width: .8; stroke-dasharray: 3 3; }
+.map-sphere { position: absolute; left: 0; top: 0; overflow: visible; border-radius: 50%; background: rgba(17, 25, 32, .48); box-shadow: 0 0 0 1px rgba(16, 20, 24, .75), 0 8px 22px rgba(0, 0, 0, .28); pointer-events: none; z-index: 2; }
+.map-sphere .sphere-ground { fill: rgba(17, 25, 32, .34); }
+.map-sphere .sphere-rim { stroke: rgba(237, 244, 247, .58); }
+.map-sphere .sphere-horizon { stroke: rgba(237, 244, 247, .78); }
+.map-sphere .sphere-sun-now { filter: url(#mapGlow); }
 .map-controls { position: absolute; right: 10px; top: 10px; display: grid; gap: 6px; z-index: 5; }
 .map-controls button { width: 38px; height: 38px; padding: 0; border-radius: 8px; background: rgba(15, 21, 25, .9); font-size: 20px; line-height: 1; }
 .map-radius-label { position: absolute; left: 10px; right: 58px; top: 10px; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .45); border-radius: 8px; background: rgba(15, 21, 25, .9); color: var(--text); font-size: 12px; z-index: 5; }
 .map-radius-label input { min-width: 0; }
+.map-tilt-label { position: absolute; left: 10px; right: 58px; top: 56px; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .45); border-radius: 8px; background: rgba(15, 21, 25, .9); color: var(--text); font-size: 12px; z-index: 5; }
+.map-tilt-label input { min-width: 0; }
 .map-info { position: absolute; left: 10px; right: 10px; bottom: 50px; padding: 7px 9px; border: 1px solid rgba(153, 168, 176, .38); border-radius: 8px; background: rgba(15, 21, 25, .88); color: var(--text); font-size: 11px; line-height: 1.4; z-index: 5; }
 .map-use { position: absolute; left: 10px; bottom: 10px; z-index: 5; background: rgba(15, 21, 25, .92); }
 .map-credit { position: absolute; right: 8px; bottom: 8px; padding: 3px 5px; border-radius: 4px; background: rgba(255, 255, 255, .8); color: #101418; font-size: 10px; z-index: 4; pointer-events: none; }
