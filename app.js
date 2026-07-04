@@ -1075,8 +1075,10 @@
       forward: { x: -(ca * sg + sa * sb * cg), y: -(sa * sg - ca * sb * cg), z: -cb * cg }
     };
   }
-  // alpha 原点(iOSでは不定)と真北のずれ δ: コンパス値と行列側で同じ量(端末上端の水平射影方位)を
-  // 計算して差分を取る。コンパスの180°反転は差分で自動的に相殺されるため反転補正が不要になる
+  // alpha 原点(iOSでは不定)と真北のずれ δ: コンパス値と行列側で同じ量(照準=背面視線 forward の
+  // 水平射影方位)の差分を取る。基準を照準そのものに置くと azimuthOf(rotAz(v,δ))=azimuthOf(v)+δ より
+  // 画面中央の方位 = azimuthOf(forward)+δ = webkitCompassHeading+偏角 が beta/gamma によらず厳密一致する。
+  // 上端 up を基準にすると beta=90° で方位が 180° 反転し、斜め上帯域でロール成分の残差が方位ずれになっていた(#29)。
   function updateDelta(ev) {
     var o = state.orientation;
     if (o.alpha === null || o.beta === null || o.gamma === null) return;
@@ -1086,10 +1088,11 @@
       o.deltaReady = true;
       return;
     }
-    var top = deviceAxes(o.alpha, o.beta, o.gamma).up;
-    var horiz = Math.sqrt(top.x * top.x + top.y * top.y);
-    if (horiz < .2) return; // 上端がほぼ鉛直(水平狙い付近)は射影もコンパスも縮退するため更新を凍結
-    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(top));
+    // 照準(forward)の水平射影を基準にする。forward の方位は地平線→天頂で連続(反転しない)
+    var aim = deviceAxes(o.alpha, o.beta, o.gamma).forward;
+    var horiz = Math.sqrt(aim.x * aim.x + aim.y * aim.y);
+    if (horiz < .2) return; // 照準がほぼ鉛直(天頂/真下狙い)は射影もコンパスも縮退するため更新を凍結
+    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(aim));
     if (!o.deltaReady) {
       // 初期化は基準軸の取り違えが起きない姿勢(直立未満: 上端射影=背面射影)に限る
       if (o.beta >= 80) return;
@@ -1097,9 +1100,8 @@
       o.deltaReady = true;
       return;
     }
-    // iOSコンパスは姿勢の帯域によって基準軸(上端射影/背面射影)が切り替わり、値が180°入れ替わる
-    // (斜め上帯域で背面基準になる実測挙動)。δは物理的にほぼ一定なので、
-    // 候補 t / t+180 のうち現在のδに近い方を採用する(連続性選択)
+    // iOSコンパス自体が姿勢の帯域で基準軸を切り替え値が180°入れ替わる実測挙動への耐性。
+    // δは物理的にほぼ一定なので、候補 t / t+180 のうち現在のδに近い方を採用する(連続性選択)
     var t2 = t + 180;
     var target = Math.abs(angleDiff(t, o.delta)) <= Math.abs(angleDiff(t2, o.delta)) ? t : t2;
     o.delta = smoothAngle(o.delta, target, .22);
