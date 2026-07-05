@@ -106,7 +106,7 @@
       saveLoc(state.loc);
       render();
     });
-    els.compassBtn.addEventListener('click', enableCompass);
+    els.compassBtn.addEventListener('click', toggleCompass);
     els.mode2dBtn.addEventListener('click', function () { setMode('2d'); });
     els.mode3dBtn.addEventListener('click', function () { setMode('3d'); });
     els.modeSphereBtn.addEventListener('click', function () { setMode('sphere'); });
@@ -260,6 +260,18 @@
       render();
     }, { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 });
   }
+  function toggleCompass() {
+    if (state.compassOn) disableCompass();
+    else enableCompass();
+  }
+  function disableCompass() {
+    // deviceorientation リスナーは 3D かざしモードが姿勢に依存するため外さず、追従フラグのみ落とす
+    state.compassOn = false;
+    els.compassStatus.textContent = '北上固定';
+    els.compassBtn.textContent = 'コンパス連動';
+    els.compassBtn.classList.remove('active');
+    render(); // 2Dは北上固定(rot=0)へ、天球は手動ドラッグ(state.sphere.az)へ戻す
+  }
   function enableCompass() {
     function onGranted() {
       if (!orientationListening) {
@@ -268,6 +280,8 @@
       }
       state.compassOn = true;
       els.compassStatus.textContent = '端末方位に追従';
+      els.compassBtn.textContent = '連動を解除';
+      els.compassBtn.classList.add('active');
       render();
     }
     if (!window.DeviceOrientationEvent) {

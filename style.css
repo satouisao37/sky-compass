@@ -109,6 +109,7 @@ main { max-width: 620px; margin: 0 auto; }
 .sky-3d-status { position: absolute; left: 24px; right: 24px; bottom: 28px; padding: 8px 10px; border-radius: 8px; background: rgba(15, 21, 25, .82); color: var(--muted); font-size: 12px; text-align: center; pointer-events: none; }
 .compass-actions { display: flex; align-items: center; gap: 12px; justify-content: center; color: var(--muted); font-size: 12px; margin-top: 6px; }
 .compass-actions.hidden { display: none; }
+#compassBtn.active { border-color: var(--accent); color: var(--accent); }
 
 .app-version { text-align: center; color: var(--muted); font-size: 11px; margin: 14px 0 24px; }
 
