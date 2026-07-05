@@ -31,8 +31,7 @@
       heading: null,
       ready: false,
       delta: null,
-      deltaReady: false,
-      skyFlip: false
+      deltaReady: false
     },
     raf3d: null,
     declination: Number(localStorage.getItem('declination') || '-7.7')
@@ -43,6 +42,8 @@
   var renderedPathKey = '';
   var orientationListening = false;
   var headingOutliers = 0;
+  var headingAnchorOff = 0;
+  var deltaAnchorOff = 0;
   var vis3d = { sun: false, moon: false };
   var basisPrev = null;
   var ref3d = null;
@@ -298,11 +299,9 @@
     }
   }
   function onOrientation(ev) {
-    // 反転判定はこのフレームの renderCompassRotation より前に確定させる(静止時の1フレーム遅延を防ぐ)
-    updateSkyFlip(ev.beta);
     var heading = null;
     if (typeof ev.webkitCompassHeading === 'number') {
-      heading = withFlipCorrection(compassHeading(ev) + state.declination, ev.beta);
+      heading = withFlipCorrection(ev.webkitCompassHeading + state.declination, ev.beta);
     } else if (typeof ev.alpha === 'number') {
       heading = 360 - ev.alpha + state.declination;
     }
@@ -325,6 +324,7 @@
         state.heading = smoothAngle(state.heading, heading, .22);
         state.orientation.heading = smoothAngle(state.orientation.heading, heading, .22);
       }
+      reanchorHeading(ev);
       renderCompassRotation();
       // 姿勢のみ(方位 null)のフレーム後に方位が戻っても文言が固着しないよう、成功時に復帰させる
       if (state.compassOn && els.compassStatus.textContent !== '端末方位に追従') els.compassStatus.textContent = '端末方位に追従';
@@ -1233,7 +1233,7 @@
     var aim = deviceAxes(o.alpha, o.beta, o.gamma).forward;
     var horiz = Math.sqrt(aim.x * aim.x + aim.y * aim.y);
     if (horiz < .2) return; // 照準がほぼ鉛直(天頂/真下狙い)は射影もコンパスも縮退するため更新を凍結
-    var t = norm360(compassHeading(ev) + state.declination - azimuthOf(aim));
+    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(aim));
     if (!o.deltaReady) {
       // 初期化は基準軸の取り違えが起きない姿勢(直立未満: 上端射影=背面射影)に限る
       if (o.beta >= 80) return;
@@ -1241,18 +1241,24 @@
       o.deltaReady = true;
       return;
     }
+    // δの連続性選択も heading と同じ分岐ロック問題を持つ(誤って t+180 側に入ると保持し続ける)。
+    // 上端射影と照準 forward の方位が一致し軸の取り違えが起きない |β|<45 では t が真のδそのもの
+    // (ロールがあっても両射影の方位差は90°程度に収まり、しきい値120°を超えない)。
+    // 180°側に居座り続けたときだけ矯正する(#39)
+    if (Math.abs(o.beta) < 45 && Math.abs(angleDiff(t, o.delta)) > 120) {
+      if (++deltaAnchorOff >= 8) {
+        o.delta = t;
+        deltaAnchorOff = 0;
+        return;
+      }
+    } else {
+      deltaAnchorOff = 0;
+    }
     // iOSコンパス自体が姿勢の帯域で基準軸を切り替え値が180°入れ替わる実測挙動への耐性。
     // δは物理的にほぼ一定なので、候補 t / t+180 のうち現在のδに近い方を採用する(連続性選択)
     var t2 = t + 180;
     var target = Math.abs(angleDiff(t, o.delta)) <= Math.abs(angleDiff(t2, o.delta)) ? t : t2;
     o.delta = smoothAngle(o.delta, target, .22);
-  }
-  // 実機 iOS の webkitCompassHeading は本アプリの想定基準と180°逆(端末上端の向きの取り違え)。
-  // headless は webkitCompassHeading 経路を通らずこの符号を検証できず(spec.md §6)、実機で判明(#38)。
-  // 2D(state.heading)・天球・3D(delta)はすべてこの値の下流にあるため、読み取りを本ヘルパに集約して
-  // +180 を1点で当て、姿勢に関係なく3モードを一括で真方位へ合わせる。(A)鏡像でなく(B)180°反転のため符号反転ではなく +180。
-  function compassHeading(ev) {
-    return ev.webkitCompassHeading + 180;
   }
   function azimuthOf(v) {
     return norm360(Math.atan2(v.x, v.y) * 180 / Math.PI);
@@ -1306,18 +1312,14 @@
   function angleDiff(a, b) {
     return (a - b + 540) % 360 - 180;
   }
-  // スマホの背面を空へ向けて(3Dかざしと同じ姿勢で)かざすと beta>90 になり、端末上端基準の
-  // webkitCompassHeading(=state.heading)はかざした視線と逆を向く。この帯域では 2D/天球の表示方位を
-  // 180°反転し、実際に見上げている方角と一致させる。境界の符号ちらつき防止に 80〜100°のヒステリシス。
-  // (3Dかざしは回転行列で背面視線 forward 基準に処理済みのため反転対象外)
-  function updateSkyFlip(beta) {
-    if (typeof beta !== 'number') return;
-    if (beta > 100) state.orientation.skyFlip = true;
-    else if (beta < 80) state.orientation.skyFlip = false;
-  }
-  // 2Dコンパス・天球モードの表示に使う方位。空へ向けた帯域では 180°反転する。state.heading 本体は不変。
+  // 2Dコンパス・天球モードの表示に使う方位。
+  // 【重要・再追加禁止】#30 の「空へ向けた帯域(β>100)で 180°反転(skyFlip)」は撤去した(#39)。
+  // 生の webkitCompassHeading は垂直越えで180°跳ぶが、withFlipCorrection の連続性選択が既に
+  // それを打ち消して state.heading を視線方位のまま保つ。表示側でさらに反転すると同じ180°跳びへの
+  // 二重補正になり、かざした帯域で常に180°逆を表示していた。180°反転の扱いは withFlipCorrection の
+  // 一層だけに置くこと。
   function displayHeading() {
-    return state.orientation.skyFlip ? norm360(state.heading + 180) : state.heading;
+    return state.heading;
   }
   // iOSコンパスは姿勢の帯域によって基準軸(上端射影/背面射影)が切り替わり、値が180°入れ替わる。
   // 0/180°のどちらが正しいかは平滑方位への連続性で選ぶ。初期化だけは取り違えが起きない
@@ -1329,6 +1331,27 @@
     }
     var flipped = base + 180;
     return Math.abs(angleDiff(flipped, state.orientation.heading)) < Math.abs(angleDiff(base, state.orientation.heading)) ? flipped : base;
+  }
+  // withFlipCorrection の連続性選択は初回サンプルで決まった 0/180 分岐を保持し続ける。しかも候補は
+  // 常に平滑値から90°以内に丸められるため、後段の外れ値ジャンプ判定(>120°)は webkit 経路では
+  // 二度と発火しない(=何かの拍子に逆分岐へ入るとセッション中ずっと反転したまま自力回復できない)。
+  // 上端射影が信頼でき iOS の基準軸取り違えも起きない |β|<70 帯域では生コンパス値を絶対の真とみなし、
+  // 平滑値が180°側に居座り続けたときだけ分岐を矯正する(#39)。連発ガードは瞬間ノイズの棄却。
+  function reanchorHeading(ev) {
+    if (!state.orientation.ready || typeof ev.webkitCompassHeading !== 'number' || typeof ev.beta !== 'number' || Math.abs(ev.beta) >= 70) {
+      headingAnchorOff = 0;
+      return;
+    }
+    var raw = norm360(ev.webkitCompassHeading + state.declination);
+    if (Math.abs(angleDiff(raw, state.orientation.heading)) > 120) {
+      if (++headingAnchorOff >= 8) {
+        state.heading = raw;
+        state.orientation.heading = raw;
+        headingAnchorOff = 0;
+      }
+    } else {
+      headingAnchorOff = 0;
+    }
   }
   function screenAngle() {
     if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
