@@ -1,5 +1,5 @@
 {
-  "_comment": "USNO API (aa.usno.navy.mil/api/rstt/oneday, tz=+9) 由来の参照値。2026-07-03 取得。編集禁止。許容誤差: 太陽時刻±2分 / 月時刻±5分 / 輝面比(12:00 JST 時点)±0.05",
+  "_comment": "USNO API (aa.usno.navy.mil/api/rstt/oneday, tz=+9) 由来の参照値。2026-07-03 取得。編集禁止。許容誤差: 太陽時刻±2分 / 月時刻±5分 / 輝面比(12:00 JST 時点)±0.05 / 航海・天文薄明は sunrise-sunset.org 由来(2026-07-05取得、civilはUSNOと一致確認)。許容誤差: 薄明(航海/天文)±3分",
   "cases": [
     {
       "name": "東京 2026-07-03",
@@ -8,11 +8,15 @@
       "lon": 139.7671,
       "tzOffsetMin": 540,
       "sun": {
+        "astroDawn": "02:42",
+        "nauticalDawn": "03:23",
         "civilDawn": "04:00",
         "rise": "04:29",
         "transit": "11:45",
         "set": "19:01",
         "civilDusk": "19:31",
+        "nauticalDusk": "20:08",
+        "astroDusk": "20:49",
         "transitAltRange": [76.0, 78.5]
       },
       "moon": {
@@ -30,11 +34,15 @@
       "lon": 127.6809,
       "tzOffsetMin": 540,
       "sun": {
+        "astroDawn": "05:50",
+        "nauticalDawn": "06:18",
         "civilDawn": "06:47",
         "rise": "07:12",
         "transit": "12:27",
         "set": "17:42",
         "civilDusk": "18:07",
+        "nauticalDusk": "18:36",
+        "astroDusk": "19:04",
         "transitAltRange": [39.3, 41.3]
       },
       "moon": {
