@@ -58,6 +58,20 @@ function checkNear(name, item, actual, expectedValue, tol, unit) {
   var diff = Math.abs(actual - expectedValue);
   if (diff > tol) addFailure(name, item, expectedValue, actual.toFixed(4), diff.toFixed(4) + unit);
 }
+function toDeg(rad) { return rad * 180 / Math.PI; }
+function angleDiff(a, b) {
+  return (a - b + 540) % 360 - 180;
+}
+
+var gcEq = Astro._test.galacticToEquatorial(0, 0);
+checkNear('銀河座標変換', '銀河中心 RA', Astro._test.norm360(toDeg(gcEq.ra)), 266.40, 0.2, '度');
+checkNear('銀河座標変換', '銀河中心 Dec', toDeg(gcEq.dec), -28.94, 0.2, '度');
+var ngpEq = Astro._test.galacticToEquatorial(0, Math.PI / 2);
+checkNear('銀河座標変換', '北銀極 RA', Astro._test.norm360(toDeg(ngpEq.ra)), 192.859, 0.2, '度');
+checkNear('銀河座標変換', '北銀極 Dec', toDeg(ngpEq.dec), 27.128, 0.2, '度');
+var gcCoords = Astro._test.galacticCenterCoords(new Date());
+checkNear('銀河中心座標', 'RA', Astro._test.norm360(toDeg(gcCoords.ra)), 266.40, 0.2, '度');
+checkNear('銀河中心座標', 'Dec', toDeg(gcCoords.dec), -28.94, 0.2, '度');
 
 for (var i = 0; i < expected.cases.length; i++) {
   var c = expected.cases[i];
@@ -104,6 +118,34 @@ for (var i = 0; i < expected.cases.length; i++) {
   var sunAtTransit = Astro.sunPosition(st.transit, c.lat, c.lon);
   checkRange(c.name, '南中時 太陽高度', sunAtTransit.alt, c.sun.transitAltRange);
   checkNear(c.name, '南中時 太陽方位', sunAtTransit.az, 180, 1, '度');
+
+  var gt = Astro.galacticCenterTimes(p.y, p.m, p.d, c.lat, c.lon, c.tzOffsetMin);
+  var gcAtTransit = Astro.galacticCenterPosition(gt.transit, c.lat, c.lon);
+  checkRange(c.name, '南中時 銀河中心高度', gcAtTransit.alt, c.galacticCenter.transitAltRange);
+  checkNear(c.name, '南中時 銀河中心方位', gcAtTransit.az, 180, 1, '度');
+
+  var gw = Astro.galacticCenterWindow(p.y, p.m, p.d, c.lat, c.lon, c.tzOffsetMin);
+  for (var g = 0; g < gw.windows.length; g++) {
+    var gcWin = gw.windows[g];
+    var gcStartMs = gcWin.start.getTime();
+    var gcEndMs = gcWin.end.getTime();
+    if (gcStartMs >= gcEndMs) addFailure(c.name, '銀河中心ウィンドウ順序', 'start < end', fmtUtcTime(gcWin.start) + '-' + fmtUtcTime(gcWin.end), '不正');
+    if (gw.dusk && gcStartMs < gw.dusk.getTime()) addFailure(c.name, '銀河中心ウィンドウ開始', 'dusk以後', fmtUtcTime(gcWin.start), '範囲外');
+    if (gw.dawn && gcEndMs > gw.dawn.getTime()) addFailure(c.name, '銀河中心ウィンドウ終了', 'dawn以前', fmtUtcTime(gcWin.end), '範囲外');
+    var gcMid = new Date((gcStartMs + gcEndMs) / 2);
+    var gcMidSun = Astro.sunPosition(gcMid, c.lat, c.lon);
+    var gcMidPos = Astro.galacticCenterPosition(gcMid, c.lat, c.lon);
+    if (gcMidPos.alt <= -0.2) addFailure(c.name, '銀河中心ウィンドウ高度', '> -0.2', gcMidPos.alt.toFixed(2), '範囲外');
+    if (gcMidSun.alt >= -17.9) addFailure(c.name, '銀河中心ウィンドウ太陽高度', '< -17.9', gcMidSun.alt.toFixed(2), '範囲外');
+  }
+}
+
+var planeDate = new Date(Date.UTC(2026, 6, 3, 12, 0, 0));
+var plane = Astro.galacticPlanePoints(planeDate, 35.6812, 139.7671, 5);
+var gcPlane = Astro.galacticCenterPosition(planeDate, 35.6812, 139.7671);
+checkNear('銀河面大円', 'l=0 高度', plane[0].alt, gcPlane.alt, 0.6, '度');
+if (Math.abs(angleDiff(plane[0].az, gcPlane.az)) > 0.6) {
+  addFailure('銀河面大円', 'l=0 方位', gcPlane.az.toFixed(3), plane[0].az.toFixed(3), Math.abs(angleDiff(plane[0].az, gcPlane.az)).toFixed(3) + '度');
 }
 
 var anchorDates = [

@@ -38,6 +38,20 @@
       dec: Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l))
     };
   }
+  function galacticToEquatorial(l, b) {
+    var aNGP = toRad(192.85948);
+    var dNGP = toRad(27.12825);
+    var lNCP = toRad(122.93192);
+    var sinb = Math.sin(b);
+    var cosb = Math.cos(b);
+    var dec = Math.asin(clamp(Math.sin(dNGP) * sinb + Math.cos(dNGP) * cosb * Math.cos(lNCP - l), -1, 1));
+    var y = cosb * Math.sin(lNCP - l);
+    var x = Math.cos(dNGP) * sinb - Math.sin(dNGP) * cosb * Math.cos(lNCP - l);
+    return { ra: aNGP + Math.atan2(y, x), dec: dec };
+  }
+  function galacticCenterCoords() {
+    return galacticToEquatorial(0, 0);
+  }
   function sunCoords(date) {
     var d = days(date);
     var M = norm360(357.5291 + 0.98560028 * d);
@@ -201,6 +215,9 @@
   Astro.moonPosition = function (date, lat, lon) {
     return position(date, lat, lon, moonCoords, true, true);
   };
+  Astro.galacticCenterPosition = function (date, lat, lon) {
+    return position(date, lat, lon, galacticCenterCoords, false, true);
+  };
   Astro.sunTimes = function (y, m, d, lat, lon, tzOffsetMin) {
     var start = localDayStart(y, m, d, tzOffsetMin);
     var end = start + dayMs;
@@ -232,6 +249,64 @@
       set: sets.length ? sets[0] : null,
       transit: maxTime(start, end, 10, rawAlt)
     };
+  };
+  Astro.galacticCenterTimes = function (y, m, d, lat, lon, tzOffsetMin) {
+    var start = localDayStart(y, m, d, tzOffsetMin);
+    var end = start + dayMs;
+    var rawAlt = function (date) { return position(date, lat, lon, galacticCenterCoords, false, false).alt; };
+    return {
+      rise: crossing(start, end, 2, rawAlt, 0, true),
+      transit: maxTime(start, end, 5, rawAlt),
+      set: crossing(start, end, 2, rawAlt, 0, false)
+    };
+  };
+  Astro.galacticCenterWindow = function (y, m, d, lat, lon, tzOffsetMin) {
+    var horizon = 0;
+    var sunAlt = function (date) { return position(date, lat, lon, sunCoords, false, false).alt; };
+    var gcAlt = function (date) { return position(date, lat, lon, galacticCenterCoords, false, false).alt; };
+    var startD = localDayStart(y, m, d, tzOffsetMin);
+    var dusk = crossing(startD, startD + dayMs, 2, sunAlt, -18, false);
+    var nextStart = startD + dayMs;
+    var dawn = crossing(nextStart, nextStart + dayMs, 2, sunAlt, -18, true);
+    var windows = [];
+    if (!dusk || !dawn) return { dusk: dusk, dawn: dawn, windows: windows };
+
+    var rises = allCrossings(dusk.getTime(), dawn.getTime(), 5, gcAlt, horizon, true);
+    var sets = allCrossings(dusk.getTime(), dawn.getTime(), 5, gcAlt, horizon, false);
+    var points = [{ t: dusk, cause: 'dusk' }];
+    for (var i = 0; i < rises.length; i++) points.push({ t: rises[i], cause: 'gcRise' });
+    for (var j = 0; j < sets.length; j++) points.push({ t: sets[j], cause: 'gcSet' });
+    points.sort(function (a, b) { return a.t.getTime() - b.t.getTime(); });
+    points.push({ t: dawn, cause: 'dawn' });
+
+    for (var k = 0; k < points.length - 1; k++) {
+      var t0 = points[k].t.getTime();
+      var t1 = points[k + 1].t.getTime();
+      if (t1 - t0 < 60000) continue;
+      var mid = new Date((t0 + t1) / 2);
+      if (gcAlt(mid) > horizon) {
+        windows.push({
+          start: new Date(t0),
+          end: new Date(t1),
+          startCause: points[k].cause,
+          endCause: points[k + 1].cause
+        });
+      }
+    }
+    return { dusk: dusk, dawn: dawn, windows: windows };
+  };
+  Astro.galacticPlanePoints = function (date, lat, lon, stepDeg) {
+    var step = stepDeg || 5;
+    var d = days(date);
+    var phi = toRad(lat);
+    var lst = sidereal(d, lon);
+    var pts = [];
+    for (var l = 0; l <= 360; l += step) {
+      var eq = galacticToEquatorial(toRad(l), 0);
+      var H = lst - eq.ra;
+      pts.push({ l: l, az: azimuth(H, phi, eq.dec), alt: toDeg(altitude(H, phi, eq.dec)) });
+    }
+    return pts;
   };
   Astro.starWindow = function (y, m, d, lat, lon, tzOffsetMin) {
     var horizon = -0.833;
@@ -282,7 +357,7 @@
       phaseAngle: norm360(toDeg(angle))
     };
   };
-  Astro._test = { days: days, sunCoords: sunCoords, moonCoords: moonCoords, norm360: norm360, parseDate: isoDateParts };
+  Astro._test = { days: days, sunCoords: sunCoords, moonCoords: moonCoords, galacticToEquatorial: galacticToEquatorial, galacticCenterCoords: galacticCenterCoords, norm360: norm360, parseDate: isoDateParts };
 
   root.Astro = Astro;
   if (typeof module !== 'undefined') module.exports = Astro;

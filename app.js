@@ -64,7 +64,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -460,6 +460,7 @@
     els.moonNow.textContent = '方位 ' + degDir(moon.az) + ' / 高度 ' + moon.alt.toFixed(1) + '度 / 月齢 ' + illum.age.toFixed(1) + ' / 輝面比 ' + Math.round(illum.fraction * 100) + '%';
     els.sunTimes.textContent = '出 ' + fmtTime(st.rise) + ' / 南中 ' + fmtTime(st.transit) + ' / 入 ' + fmtTime(st.set);
     els.moonTimes.textContent = '出 ' + fmtTime(mt.rise) + ' / 南中 ' + fmtTime(mt.transit) + ' / 入 ' + fmtTime(mt.set);
+    drawGalaxyCard(date, loc, daily);
     // 略語をやめ時系列順に明記(朝=ブルー→ゴールデン、夕=ゴールデン→ブルー)。時刻は数値のみのため innerHTML でも安全
     els.lightTimes.innerHTML = '朝　ブルーアワー ' + fmtRange(st.blueAM) + '／ゴールデンアワー ' + fmtRange(st.goldenAM) + '<br>' +
       '夕　ゴールデンアワー ' + fmtRange(st.goldenPM) + '／ブルーアワー ' + fmtRange(st.bluePM) + '<br>' +
@@ -470,6 +471,7 @@
       renderedPathKey = daily.key;
     }
     renderTimeline(daily, p, loc, date);
+    drawGalaxy2d(date, loc);
     drawBody(els.sunMarker, sun, 'sun', illum);
     drawBody(els.moonMarker, moon, 'moon', illum);
     els.belowLabel.textContent = [sun.alt < 0 ? '太陽は地平線下' : '', moon.alt < 0 ? '月は地平線下' : ''].filter(Boolean).join(' / ');
@@ -630,6 +632,8 @@
         sunTimes: Astro.sunTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         moonTimes: Astro.moonTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         starWindow: Astro.starWindow(p.y, p.m, p.d, loc.lat, loc.lon, tz),
+        galacticCenterTimes: Astro.galacticCenterTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
+        galacticCenterWindow: Astro.galacticCenterWindow(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         sunPath: paths.sunPath,
         moonPath: paths.moonPath,
         sphereSun: paths.sphereSun,
@@ -678,6 +682,40 @@
       x: cx + side * Math.abs(fraction - .5) * 4,
       rx: (1 - fraction) * 10
     };
+  }
+  function drawGalaxy2d(date, loc) {
+    var pts = Astro.galacticPlanePoints(date, loc.lat, loc.lon, 4);
+    var d = '';
+    var open = false;
+    pts.forEach(function (pt) {
+      if (pt.alt < 0) {
+        open = false;
+        return;
+      }
+      var p = project(pt);
+      d += (open ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      open = true;
+    });
+    var html = d ? '<path class="path-galaxy" d="' + d + '"/>' : '';
+    var gc = Astro.galacticCenterPosition(date, loc.lat, loc.lon);
+    if (gc.alt >= 0) {
+      var gp = project(gc);
+      html += '<circle class="gc-marker" cx="' + gp.x.toFixed(1) + '" cy="' + gp.y.toFixed(1) + '" r="3.4"/>' +
+        '<text class="gc-label" x="' + gp.x.toFixed(1) + '" y="' + (gp.y - 6).toFixed(1) + '">GC</text>';
+    }
+    els.galaxy2d.innerHTML = html;
+  }
+  function drawGalaxyCard(date, loc, daily) {
+    var gc = Astro.galacticCenterPosition(date, loc.lat, loc.lon);
+    els.galaxyNow.textContent = gc.alt < 0 ?
+      '地平線下（方位 ' + degDir(gc.az) + '）' :
+      '方位 ' + degDir(gc.az) + ' / 高度 ' + gc.alt.toFixed(1) + '度';
+    var gt = daily.galacticCenterTimes;
+    var transitAlt = gt.transit ? Astro.galacticCenterPosition(gt.transit, loc.lat, loc.lon).alt : null;
+    var win = daily.galacticCenterWindow;
+    els.galaxyTimes.textContent = '南中 ' + fmtTime(gt.transit) +
+      (transitAlt === null ? '' : '（高度' + transitAlt.toFixed(0) + '度）') +
+      ' / 見頃 ' + fmtGalaxyWindow(win);
   }
   function project(pos) {
     var alt = Math.max(pos.alt, 0);
@@ -868,6 +906,7 @@
     var moon = Astro.moonPosition(date, state.map.selected.lat, state.map.selected.lon);
     var illum = Astro.moonIllumination(date);
     renderMapSphereMarkers(sun, moon, illum, basis);
+    renderGalaxyInto(els.mapSphereGalaxy, date, state.map.selected, basis);
     els.mapInfo.textContent = state.map.selected.lat.toFixed(5) + ', ' + state.map.selected.lon.toFixed(5) +
       ' / 太陽 ' + degDir(sun.az) + ' 高度 ' + sun.alt.toFixed(1) + '度' +
       ' / 月 ' + degDir(moon.az) + ' 高度 ' + moon.alt.toFixed(1) + '度';
@@ -1001,7 +1040,10 @@
     var markerKey = [date.getTime(), loc.lat.toFixed(5), loc.lon.toFixed(5)].join('|');
     if (sphereRendered.view !== viewKey) renderSphereGrid(basis);
     if (sphereRendered.view !== viewKey || sphereRendered.daily !== daily.key) renderSpherePaths(daily, basis);
-    if (sphereRendered.view !== viewKey || sphereRendered.marker !== markerKey) renderSphereMarkers(date, loc, basis);
+    if (sphereRendered.view !== viewKey || sphereRendered.marker !== markerKey) {
+      renderSphereMarkers(date, loc, basis);
+      renderGalaxyInto(els.sphereGalaxy, date, loc, basis);
+    }
     sphereRendered.view = viewKey;
     sphereRendered.daily = daily.key;
     sphereRendered.marker = markerKey;
@@ -1128,6 +1170,19 @@
       html += '<circle class="sphere-moon-now' + (mp.front ? '' : ' sphere-back') + '" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/>';
     }
     els.sphereMarkers.innerHTML = html;
+  }
+  function renderGalaxyInto(targetG, date, loc, basis) {
+    var samples = Astro.galacticPlanePoints(date, loc.lat, loc.lon, 4).map(function (pt) {
+      return { az: pt.az, alt: pt.alt, vector: azAltVector(pt.az, pt.alt) };
+    });
+    var arch = sphereSplitPaths(samples, basis, 'sphere-path-galaxy', true);
+    var html = arch.back + arch.front;
+    var gc = Astro.galacticCenterPosition(date, loc.lat, loc.lon);
+    if (gc.alt >= 0) {
+      var p = sphereProject(azAltVector(gc.az, gc.alt), basis);
+      html += '<circle class="sphere-gc-now' + (p.front ? '' : ' sphere-back') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4.2"/>';
+    }
+    targetG.innerHTML = html;
   }
   // clipBelow=true(太陽・月の軌道)では地平線(z=0)で切り、地平線下(ドームに埋まる部分)は描かない。
   // grid など clipBelow=false は従来どおり全区間を描く。
@@ -1555,6 +1610,15 @@
       if (w.startCause === 'moonset') text = '月没後 ' + text;
       if (w.endCause === 'moonrise') text += '（月出まで）';
       return text;
+    }).join('／');
+  }
+  function fmtGalaxyWindow(win) {
+    if (!win || !win.windows || !win.windows.length) {
+      if (!win || !win.dusk || !win.dawn) return 'なし（薄明が明けない）';
+      return 'なし（夜間は地平線下）';
+    }
+    return win.windows.map(function (w) {
+      return fmtTime(w.start) + '〜' + fmtTime(w.end);
     }).join('／');
   }
   function pad(n) { return n < 10 ? '0' + n : String(n); }

@@ -1,5 +1,5 @@
 {
-  "_comment": "USNO API (aa.usno.navy.mil/api/rstt/oneday, tz=+9) 由来の参照値。2026-07-03 取得。編集禁止。許容誤差: 太陽時刻±2分 / 月時刻±5分 / 輝面比(12:00 JST 時点)±0.05 / 航海・天文薄明は sunrise-sunset.org 由来(2026-07-05取得、civilはUSNOと一致確認)。許容誤差: 薄明(航海/天文)±3分",
+  "_comment": "USNO API (aa.usno.navy.mil/api/rstt/oneday, tz=+9) 由来の参照値。2026-07-03 取得。編集禁止。許容誤差: 太陽時刻±2分 / 月時刻±5分 / 輝面比(12:00 JST 時点)±0.05 / 航海・天文薄明は sunrise-sunset.org 由来(2026-07-05取得、civilはUSNOと一致確認)。許容誤差: 薄明(航海/天文)±3分。銀河中心南中高度は 90−|緯度−(−28.94°)| の物理式由来",
   "cases": [
     {
       "name": "東京 2026-07-03",
@@ -25,6 +25,9 @@
         "rise": "21:14",
         "fracillum": 0.91,
         "phaseName": "Waning Gibbous"
+      },
+      "galacticCenter": {
+        "transitAltRange": [24.9, 25.9]
       }
     },
     {
@@ -51,6 +54,9 @@
         "transit": "21:50",
         "fracillum": 0.88,
         "phaseName": "Waxing Gibbous"
+      },
+      "galacticCenter": {
+        "transitAltRange": [34.3, 35.4]
       }
     }
   ]
