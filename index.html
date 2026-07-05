@@ -31,6 +31,22 @@
       </div>
       <label class="slider-label" for="timeSlider"><span>時刻</span><strong id="timeLabel">--:--</strong></label>
       <input id="timeSlider" type="range" min="0" max="1435" step="5" value="720">
+      <div class="timeline">
+        <svg id="timelineBar" class="timeline-bar" viewBox="0 0 1440 56" preserveAspectRatio="none" role="img" aria-label="1日の光と月のタイムライン(タップで時刻移動)">
+          <defs>
+            <linearGradient id="twilightGrad" x1="0" y1="0" x2="1" y2="0"></linearGradient>
+          </defs>
+          <rect id="tlSky" x="0" y="0" width="1440" height="56" fill="url(#twilightGrad)"/>
+          <g id="tlMoon"></g>
+          <g id="tlGB"></g>
+          <g id="tlHours"></g>
+          <g id="tlSun"></g>
+          <line id="tlNow" class="tl-indicator" y1="0" y2="56" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <div id="tlNowHandle" class="tl-indicator-handle" aria-hidden="true"></div>
+        <div id="timelineAxis" class="timeline-axis" aria-hidden="true"></div>
+        <div id="timelineEvents" class="timeline-events"></div>
+      </div>
     </section>
 
     <section class="compass-section" aria-label="空のコンパス">
@@ -156,7 +172,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.13.0</p>
+    <p class="app-version">スカイコンパス v0.14.0</p>
   </main>
 
   <script src="astro.js" defer></script>

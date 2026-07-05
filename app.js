@@ -40,6 +40,7 @@
   var dailyCache = {};
   var sky3dCache = {};
   var renderedPathKey = '';
+  var renderedTimelineKey = '';
   var orientationListening = false;
   var headingOutliers = 0;
   var headingAnchorOff = 0;
@@ -63,7 +64,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -115,6 +116,7 @@
     bindSphereDrag();
     bindMapEvents();
     bindModeSwipe();
+    bindTimeline();
   }
   // コンパス盤の横フリックで表示モードを前後に切り替える
   var MODE_ORDER = ['2d', '3d', 'sphere', 'map'];
@@ -393,6 +395,45 @@
     state.selectedDate = new Date(y, m - 1, d, Math.floor(mins / 60), mins % 60, 0);
     render();
   }
+  function jumpToMinutes(min) {
+    min = Math.max(0, Math.min(1435, Math.round(min / 5) * 5));
+    els.timeSlider.value = String(min);
+    state.manual = true;
+    applyDateAndSlider();
+  }
+  function bindTimeline() {
+    if (!els.timelineBar) return;
+    var pointerId = null;
+    function moveToPointer(ev) {
+      var rect = els.timelineBar.getBoundingClientRect();
+      if (!rect.width) return;
+      jumpToMinutes((ev.clientX - rect.left) / rect.width * 1440);
+    }
+    els.timelineBar.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      pointerId = ev.pointerId;
+      els.timelineBar.classList.add('dragging');
+      els.timelineBar.setPointerCapture(pointerId);
+      moveToPointer(ev);
+    });
+    els.timelineBar.addEventListener('pointermove', function (ev) {
+      if (pointerId !== ev.pointerId || !(ev.buttons & 1)) return;
+      moveToPointer(ev);
+    });
+    function endPointer(ev) {
+      if (pointerId !== ev.pointerId) return;
+      if (els.timelineBar.hasPointerCapture(pointerId)) els.timelineBar.releasePointerCapture(pointerId);
+      pointerId = null;
+      els.timelineBar.classList.remove('dragging');
+    }
+    els.timelineBar.addEventListener('pointerup', endPointer);
+    els.timelineBar.addEventListener('pointercancel', endPointer);
+    els.timelineEvents.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button[data-min]');
+      if (!btn || btn.disabled) return;
+      jumpToMinutes(Number(btn.getAttribute('data-min')));
+    });
+  }
   function shiftDay(delta) {
     state.manual = true;
     state.selectedDate = new Date(state.selectedDate.getTime() + delta * 86400000);
@@ -428,6 +469,7 @@
       els.moonPath.innerHTML = daily.moonPath;
       renderedPathKey = daily.key;
     }
+    renderTimeline(daily, p, loc, date);
     drawBody(els.sunMarker, sun, 'sun', illum);
     drawBody(els.moonMarker, moon, 'moon', illum);
     els.belowLabel.textContent = [sun.alt < 0 ? '太陽は地平線下' : '', moon.alt < 0 ? '月は地平線下' : ''].filter(Boolean).join(' / ');
@@ -441,6 +483,129 @@
   function renderCompassRotation() {
     var rot = state.compassOn ? -displayHeading() : 0;
     els.rotatingSky.setAttribute('transform', 'rotate(' + rot.toFixed(1) + ')');
+  }
+  function renderTimeline(daily, p, loc, date) {
+    if (renderedTimelineKey !== daily.key) {
+      buildTimelineStatic(daily, p, loc);
+      renderedTimelineKey = daily.key;
+    }
+    updateTimelineIndicator(date);
+  }
+  function buildTimelineStatic(daily, p, loc) {
+    var st = daily.sunTimes;
+    var mt = daily.moonTimes;
+    buildTwilightGradient(st);
+    els.tlMoon.innerHTML = buildMoonBands(mt, p, loc);
+    els.tlGB.innerHTML = buildLightRails(st);
+    els.tlHours.innerHTML = buildTimelineHours();
+    els.tlSun.innerHTML = buildSunTicks(st);
+    els.timelineAxis.innerHTML = [0, 6, 12, 18, 24].map(function (h) { return '<span>' + h + '</span>'; }).join('');
+    els.timelineEvents.innerHTML = buildTimelineEvents(st, mt);
+  }
+  function buildTwilightGradient(st) {
+    var colors = timelineColors();
+    var stops = [
+      { min: 0, color: colors.night },
+      { min: minuteOf(st.astroDawn), color: colors.astro },
+      { min: minuteOf(st.nauticalDawn), color: colors.nautical },
+      { min: minuteOf(st.civilDawn), color: colors.civil },
+      { min: minuteOf(st.rise), color: colors.day },
+      { min: minuteOf(st.set), color: colors.day },
+      { min: minuteOf(st.civilDusk), color: colors.civil },
+      { min: minuteOf(st.nauticalDusk), color: colors.nautical },
+      { min: minuteOf(st.astroDusk), color: colors.astro },
+      { min: 1440, color: colors.night }
+    ].filter(function (s) { return s.min !== null; }).sort(function (a, b) { return a.min - b.min; });
+    els.twilightGrad.innerHTML = stops.map(function (s) {
+      return '<stop offset="' + (s.min / 1440 * 100).toFixed(3) + '%" stop-color="' + s.color + '"/>';
+    }).join('');
+  }
+  function timelineColors() {
+    var css = getComputedStyle(document.documentElement);
+    return {
+      night: css.getPropertyValue('--tl-night').trim(),
+      astro: css.getPropertyValue('--tl-astro').trim(),
+      nautical: css.getPropertyValue('--tl-nautical').trim(),
+      civil: css.getPropertyValue('--tl-civil').trim(),
+      day: css.getPropertyValue('--tl-day').trim()
+    };
+  }
+  function buildMoonBands(mt, p, loc) {
+    var rise = minuteOf(mt.rise);
+    var set = minuteOf(mt.set);
+    var ranges = [];
+    if (rise !== null && set !== null) {
+      ranges = rise < set ? [[rise, set]] : [[0, set], [rise, 1440]];
+    } else if (rise !== null) {
+      ranges = [[rise, 1440]];
+    } else if (set !== null) {
+      ranges = [[0, set]];
+    } else {
+      var noon = new Date(p.y, p.m - 1, p.d, 12, 0, 0);
+      if (Astro.moonPosition(noon, loc.lat, loc.lon).alt > -0.833) ranges = [[0, 1440]];
+    }
+    return ranges.map(function (r) {
+      var w = r[1] - r[0];
+      if (w <= 0) return '';
+      return '<rect class="tl-moon-band" x="' + r[0] + '" y="0" width="' + w + '" height="10"/>' +
+        '<line class="tl-moon-edge" x1="' + r[0] + '" x2="' + r[1] + '" y1="10" y2="10" vector-effect="non-scaling-stroke"/>';
+    }).join('');
+  }
+  function buildLightRails(st) {
+    return [
+      { range: st.goldenAM, cls: 'tl-golden' },
+      { range: st.goldenPM, cls: 'tl-golden' },
+      { range: st.blueAM, cls: 'tl-blue' },
+      { range: st.bluePM, cls: 'tl-blue' }
+    ].map(function (item) {
+      return rangeRects(item.range, item.cls, 50, 6);
+    }).join('');
+  }
+  function rangeRects(range, cls, y, h) {
+    if (!range || !range.start || !range.end) return '';
+    var start = minuteOf(range.start);
+    var end = minuteOf(range.end);
+    if (start === null || end === null || start === end) return '';
+    var parts = start < end ? [[start, end]] : [[0, end], [start, 1440]];
+    return parts.map(function (p) {
+      return '<rect class="' + cls + '" x="' + p[0] + '" y="' + y + '" width="' + (p[1] - p[0]) + '" height="' + h + '" rx="1"/>';
+    }).join('');
+  }
+  function buildTimelineHours() {
+    return [0, 360, 720, 1080, 1440].map(function (min) {
+      return '<line class="tl-grid" x1="' + min + '" x2="' + min + '" y1="0" y2="56" vector-effect="non-scaling-stroke"/>';
+    }).join('');
+  }
+  function buildSunTicks(st) {
+    return [st.rise, st.set].map(function (date) {
+      var min = minuteOf(date);
+      if (min === null) return '';
+      return '<line class="tl-sun-tick" x1="' + min + '" x2="' + min + '" y1="0" y2="56" vector-effect="non-scaling-stroke"/>';
+    }).join('');
+  }
+  function buildTimelineEvents(st, mt) {
+    return [
+      eventButton('sun', '☀ 出', st.rise),
+      eventButton('sun', '☀ 入', st.set),
+      eventButton('moon', '☾ 出', mt.rise),
+      eventButton('moon', '☾ 入', mt.set)
+    ].join('');
+  }
+  function eventButton(kind, label, date) {
+    var min = minuteOf(date);
+    var disabled = min === null;
+    return '<button class="timeline-event ' + kind + '" type="button"' +
+      (disabled ? ' disabled' : ' data-min="' + min + '"') + '>' + label + ' ' + fmtTime(date) + '</button>';
+  }
+  function updateTimelineIndicator(date) {
+    var mins = minuteOf(date);
+    if (mins === null) mins = 0;
+    els.tlNow.setAttribute('x1', String(mins));
+    els.tlNow.setAttribute('x2', String(mins));
+    els.tlNowHandle.style.left = (mins / 1440 * 100).toFixed(4) + '%';
+  }
+  function minuteOf(date) {
+    return date ? date.getHours() * 60 + date.getMinutes() : null;
   }
   function drawTicks() {
     var html = '';
