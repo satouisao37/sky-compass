@@ -302,7 +302,7 @@
     updateSkyFlip(ev.beta);
     var heading = null;
     if (typeof ev.webkitCompassHeading === 'number') {
-      heading = withFlipCorrection(ev.webkitCompassHeading + state.declination, ev.beta);
+      heading = withFlipCorrection(compassHeading(ev) + state.declination, ev.beta);
     } else if (typeof ev.alpha === 'number') {
       heading = 360 - ev.alpha + state.declination;
     }
@@ -1233,7 +1233,7 @@
     var aim = deviceAxes(o.alpha, o.beta, o.gamma).forward;
     var horiz = Math.sqrt(aim.x * aim.x + aim.y * aim.y);
     if (horiz < .2) return; // 照準がほぼ鉛直(天頂/真下狙い)は射影もコンパスも縮退するため更新を凍結
-    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(aim));
+    var t = norm360(compassHeading(ev) + state.declination - azimuthOf(aim));
     if (!o.deltaReady) {
       // 初期化は基準軸の取り違えが起きない姿勢(直立未満: 上端射影=背面射影)に限る
       if (o.beta >= 80) return;
@@ -1246,6 +1246,13 @@
     var t2 = t + 180;
     var target = Math.abs(angleDiff(t, o.delta)) <= Math.abs(angleDiff(t2, o.delta)) ? t : t2;
     o.delta = smoothAngle(o.delta, target, .22);
+  }
+  // 実機 iOS の webkitCompassHeading は本アプリの想定基準と180°逆(端末上端の向きの取り違え)。
+  // headless は webkitCompassHeading 経路を通らずこの符号を検証できず(spec.md §6)、実機で判明(#38)。
+  // 2D(state.heading)・天球・3D(delta)はすべてこの値の下流にあるため、読み取りを本ヘルパに集約して
+  // +180 を1点で当て、姿勢に関係なく3モードを一括で真方位へ合わせる。(A)鏡像でなく(B)180°反転のため符号反転ではなく +180。
+  function compassHeading(ev) {
+    return ev.webkitCompassHeading + 180;
   }
   function azimuthOf(v) {
     return norm360(Math.atan2(v.x, v.y) * 180 / Math.PI);
