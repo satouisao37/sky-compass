@@ -26,6 +26,10 @@ function localMinutes(date, tz) {
   var dt = new Date(ms);
   return dt.getUTCHours() * 60 + dt.getUTCMinutes() + dt.getUTCSeconds() / 60;
 }
+function fmtUtcTime(date) {
+  if (!date) return 'null';
+  return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes());
+}
 function diffMinutes(actual, expected) {
   if (actual === null || expected === null) return actual === expected ? 0 : 9999;
   var d = Math.abs(actual - expected);
@@ -60,14 +64,38 @@ for (var i = 0; i < expected.cases.length; i++) {
   var p = parseDateParts(c.date);
   var st = Astro.sunTimes(p.y, p.m, p.d, c.lat, c.lon, c.tzOffsetMin);
   var mt = Astro.moonTimes(p.y, p.m, p.d, c.lat, c.lon, c.tzOffsetMin);
+  checkTime(c.name, '太陽 天文薄明始', st.astroDawn, c.sun.astroDawn, c.tzOffsetMin, 3);
+  checkTime(c.name, '太陽 航海薄明始', st.nauticalDawn, c.sun.nauticalDawn, c.tzOffsetMin, 3);
   checkTime(c.name, '太陽 市民薄明始', st.civilDawn, c.sun.civilDawn, c.tzOffsetMin, 2);
   checkTime(c.name, '太陽 出', st.rise, c.sun.rise, c.tzOffsetMin, 2);
   checkTime(c.name, '太陽 南中', st.transit, c.sun.transit, c.tzOffsetMin, 2);
   checkTime(c.name, '太陽 入', st.set, c.sun.set, c.tzOffsetMin, 2);
   checkTime(c.name, '太陽 市民薄明終', st.civilDusk, c.sun.civilDusk, c.tzOffsetMin, 2);
+  checkTime(c.name, '太陽 航海薄明終', st.nauticalDusk, c.sun.nauticalDusk, c.tzOffsetMin, 3);
+  checkTime(c.name, '太陽 天文薄明終', st.astroDusk, c.sun.astroDusk, c.tzOffsetMin, 3);
   checkTime(c.name, '月 出', mt.rise, c.moon.rise, c.tzOffsetMin, 5);
   checkTime(c.name, '月 入', mt.set, c.moon.set, c.tzOffsetMin, 5);
   checkTime(c.name, '月 南中', mt.transit, c.moon.transit, c.tzOffsetMin, 5);
+
+  var sw = Astro.starWindow(p.y, p.m, p.d, c.lat, c.lon, c.tzOffsetMin);
+  for (var w = 0; w < sw.windows.length; w++) {
+    var win = sw.windows[w];
+    var startMs = win.start.getTime();
+    var endMs = win.end.getTime();
+    if (startMs >= endMs) addFailure(c.name, '星空ウィンドウ順序', 'start < end', fmtUtcTime(win.start) + '-' + fmtUtcTime(win.end), '不正');
+    if (sw.dusk && startMs < sw.dusk.getTime()) addFailure(c.name, '星空ウィンドウ開始', 'dusk以後', fmtUtcTime(win.start), '範囲外');
+    if (sw.dawn && endMs > sw.dawn.getTime()) addFailure(c.name, '星空ウィンドウ終了', 'dawn以前', fmtUtcTime(win.end), '範囲外');
+    var mid = new Date((startMs + endMs) / 2);
+    var midSun = Astro.sunPosition(mid, c.lat, c.lon);
+    var midMoon = Astro.moonPosition(mid, c.lat, c.lon);
+    if (midSun.alt >= -17.9) addFailure(c.name, '星空ウィンドウ太陽高度', '< -17.9', midSun.alt.toFixed(2), '範囲外');
+    if (midMoon.alt >= -0.8) addFailure(c.name, '星空ウィンドウ月高度', '< -0.8', midMoon.alt.toFixed(2), '範囲外');
+  }
+  if (c.name === '東京 2026-07-03') {
+    if (sw.windows.length !== 1) addFailure(c.name, '星空ウィンドウ数', '1', String(sw.windows.length), '不一致');
+    if (sw.windows.length && sw.windows[0].endCause !== 'moonrise') addFailure(c.name, '星空ウィンドウ終端理由', 'moonrise', sw.windows[0].endCause, '不一致');
+    if (sw.windows.length) checkTime(c.name, '星空ウィンドウ終端', sw.windows[0].end, c.moon.rise, c.tzOffsetMin, 5);
+  }
 
   var illumDate = new Date(Date.UTC(p.y, p.m - 1, p.d, 3, 0, 0)); // 12:00 JST
   var illum = Astro.moonIllumination(illumDate);

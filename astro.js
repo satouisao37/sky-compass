@@ -206,11 +206,15 @@
     var end = start + dayMs;
     var rawAlt = function (date) { return position(date, lat, lon, sunCoords, false, false).alt; };
     return {
+      astroDawn: crossing(start, end, 2, rawAlt, -18, true),
+      nauticalDawn: crossing(start, end, 2, rawAlt, -12, true),
       civilDawn: crossing(start, end, 2, rawAlt, -6, true),
       rise: crossing(start, end, 2, rawAlt, -0.833, true),
       transit: maxTime(start, end, 5, rawAlt),
       set: crossing(start, end, 2, rawAlt, -0.833, false),
       civilDusk: crossing(start, end, 2, rawAlt, -6, false),
+      nauticalDusk: crossing(start, end, 2, rawAlt, -12, false),
+      astroDusk: crossing(start, end, 2, rawAlt, -18, false),
       goldenAM: golden(start, end, rawAlt, true),
       goldenPM: golden(start, end, rawAlt, false),
       blueAM: blue(start, end, rawAlt, true),
@@ -228,6 +232,41 @@
       set: sets.length ? sets[0] : null,
       transit: maxTime(start, end, 10, rawAlt)
     };
+  };
+  Astro.starWindow = function (y, m, d, lat, lon, tzOffsetMin) {
+    var horizon = -0.833;
+    var sunAlt = function (date) { return position(date, lat, lon, sunCoords, false, false).alt; };
+    var moonAlt = function (date) { return position(date, lat, lon, moonCoords, true, false).alt; };
+    var startD = localDayStart(y, m, d, tzOffsetMin);
+    var dusk = crossing(startD, startD + dayMs, 2, sunAlt, -18, false);
+    var nextStart = startD + dayMs;
+    var dawn = crossing(nextStart, nextStart + dayMs, 2, sunAlt, -18, true);
+    var windows = [];
+    if (!dusk || !dawn) return { dusk: dusk, dawn: dawn, windows: windows };
+
+    var rises = allCrossings(dusk.getTime(), dawn.getTime(), 5, moonAlt, horizon, true);
+    var sets = allCrossings(dusk.getTime(), dawn.getTime(), 5, moonAlt, horizon, false);
+    var points = [{ t: dusk, cause: 'dusk' }];
+    for (var i = 0; i < sets.length; i++) points.push({ t: sets[i], cause: 'moonset' });
+    for (var j = 0; j < rises.length; j++) points.push({ t: rises[j], cause: 'moonrise' });
+    points.sort(function (a, b) { return a.t.getTime() - b.t.getTime(); });
+    points.push({ t: dawn, cause: 'dawn' });
+
+    for (var k = 0; k < points.length - 1; k++) {
+      var t0 = points[k].t.getTime();
+      var t1 = points[k + 1].t.getTime();
+      if (t1 - t0 < 60000) continue;
+      var mid = new Date((t0 + t1) / 2);
+      if (moonAlt(mid) < horizon) {
+        windows.push({
+          start: new Date(t0),
+          end: new Date(t1),
+          startCause: points[k].cause,
+          endCause: points[k + 1].cause
+        });
+      }
+    }
+    return { dusk: dusk, dawn: dawn, windows: windows };
   };
   Astro.moonIllumination = function (date) {
     var s = sunCoords(date);

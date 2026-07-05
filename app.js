@@ -411,6 +411,7 @@
     var daily = getDaily(p, loc, tz);
     var st = daily.sunTimes;
     var mt = daily.moonTimes;
+    var sw = daily.starWindow;
     els.dateLabel.textContent = fmtFull(date);
     els.placeLabel.textContent = loc.lat.toFixed(4) + ', ' + loc.lon.toFixed(4) + (loc.acc ? '  精度約' + Math.round(loc.acc) + 'm' : '');
     els.timeLabel.textContent = pad(date.getHours()) + ':' + pad(date.getMinutes());
@@ -420,7 +421,8 @@
     els.moonTimes.textContent = '出 ' + fmtTime(mt.rise) + ' / 南中 ' + fmtTime(mt.transit) + ' / 入 ' + fmtTime(mt.set);
     // 略語をやめ時系列順に明記(朝=ブルー→ゴールデン、夕=ゴールデン→ブルー)。時刻は数値のみのため innerHTML でも安全
     els.lightTimes.innerHTML = '朝　ブルーアワー ' + fmtRange(st.blueAM) + '／ゴールデンアワー ' + fmtRange(st.goldenAM) + '<br>' +
-      '夕　ゴールデンアワー ' + fmtRange(st.goldenPM) + '／ブルーアワー ' + fmtRange(st.bluePM);
+      '夕　ゴールデンアワー ' + fmtRange(st.goldenPM) + '／ブルーアワー ' + fmtRange(st.bluePM) + '<br>' +
+      '夜　星空　' + fmtStarWindow(sw);
     if (renderedPathKey !== daily.key) {
       els.sunPath.innerHTML = daily.sunPath;
       els.moonPath.innerHTML = daily.moonPath;
@@ -462,6 +464,7 @@
         key: key,
         sunTimes: Astro.sunTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         moonTimes: Astro.moonTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz),
+        starWindow: Astro.starWindow(p.y, p.m, p.d, loc.lat, loc.lon, tz),
         sunPath: paths.sunPath,
         moonPath: paths.moonPath,
         sphereSun: paths.sphereSun,
@@ -1377,5 +1380,17 @@
   function fmtFull(date) { return date.getFullYear() + '/' + pad(date.getMonth() + 1) + '/' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()); }
   function fmtTime(date) { return date ? pad(date.getHours()) + ':' + pad(date.getMinutes()) : '--:--'; }
   function fmtRange(r) { return fmtTime(r.start) + '-' + fmtTime(r.end); }
+  function fmtStarWindow(sw) {
+    if (!sw || !sw.windows || !sw.windows.length) {
+      if (!sw || !sw.dusk || !sw.dawn) return 'なし（薄明が明けない）';
+      return 'なし（月が一晩中出ている）';
+    }
+    return sw.windows.map(function (w) {
+      var text = fmtTime(w.start) + '〜' + fmtTime(w.end);
+      if (w.startCause === 'moonset') text = '月没後 ' + text;
+      if (w.endCause === 'moonrise') text += '（月出まで）';
+      return text;
+    }).join('／');
+  }
   function pad(n) { return n < 10 ? '0' + n : String(n); }
 })();
