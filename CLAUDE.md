@@ -1,129 +1,28 @@
 # スカイコンパス
 
-## 作業フロー（必ず守ること）
+現在地から見た太陽・月の方位/高度・出没/薄明時刻・月齢を iPhone で確認する PWA(星景・夜景の撮影計画用)。vanilla JS・ビルド無し、GitHub Pages 配信。詳細仕様は末尾の `@import`(spec.md)で読み込む。リポジトリ: `satouisao37/sky-compass`。
 
-### ステップ 1 — GitHub Issue を作成する
+> Issue 作成 → 実装 → 日本語コミット → close の**共通フロー・コミット規約・禁止事項は親 `/Users/soshi/dev/CLAUDE.md`「全ツール共通の作業フロー」に集約**。ここには再掲せず、このツール固有の前提とコマンドだけを書く。
 
-改善案・バグ修正・機能追加を受け取ったら、**必ず Issue を作成してから**作業を開始する。
+## 最重要の前提(壊さないこと)
 
-```bash
-gh issue create \
-  --repo satouisao37/sky-compass \
-  --title "【日本語で簡潔に】" \
-  --body "$(cat <<'EOF'
-## 概要
-何を・なぜ変えるか
+- **`astro.js` = 純粋計算 / `app.js` = 副作用(geolocation・センサー・SVG・SW)** の分離を保つ。`astro.js` は JXA から eval できるよう `module.exports` ガードを維持(テストが依存)。
+- **リリース時は `index.html` フッターの `スカイコンパス vX.Y.Z` と `sw.js` の `CACHE_VERSION` を同時に bump**(機能追加=マイナー / バグ修正・改善=パッチ)。片方だけだとユーザー実機で更新が反映されない。
+- 表示切替は **`classList` に統一**。SVG 要素に `hidden` プロパティは無く、HTMLElement の `[hidden]` も author CSS の `display` に負ける(サイレント無効)。
+- 配信は GitHub Pages の**公開リポ**(iOS は非 HTTPS で GPS・コンパス不可。private 規約のユーザー承認済み例外)。**`git push` = そのままデプロイ**(main を Pages が ~1 分で自動配信)。
+- センサー・GPS・地図の実挙動は **HTTPS + 実機でしか検証できない**(curl・ローカル http・headless は `webkitCompassHeading` 経路を通らない)。設計上の不変条件(3D姿勢・天球投影の手系・地図設定など)は spec.md §6 が正本。**触る前に §6 を読む**。
 
-## 現状の問題
-（あれば記載）
+## 作業フロー(ツール固有)
 
-## 改善方針
-具体的な実装アプローチ
+- 天文ロジックは `astro.js` に純粋関数で足し、`test/astro.test.js`(USNO 参照値 `expected.json` と突合)を更新する。副作用は `app.js` に閉じ込める。
+- コメント・UI 文言は**日本語**。
+- 実装後に必ず実行(node 不要・JXA 構文チェック＋計算突合):
 
-## 変更対象ファイル
-- 
+  ```bash
+  bash test/run.sh
+  ```
 
-## 備考
-（あれば記載）
-EOF
-)"
-```
-
-Issue の本文に含めること:
-
-- **概要**: 何を・なぜ変えるか
-- **現状の問題**（あれば）
-- **改善方針**: 具体的な実装アプローチ
-- **変更対象ファイル**
-
----
-
-### ステップ 2 — 実装する
-
-- 既存ファイルを優先的に編集し、不要な新規ファイルは作らない
-- 実装後は必ず構文チェックを行う
-
-**Python の場合:**
-
-```bash
-python -c "import ast; ast.parse(open('対象ファイル.py', encoding='utf-8').read()); print('OK')"
-```
-
-**TypeScript / JavaScript の場合:**
-
-```bash
-npx tsc --noEmit --skipLibCheck
-```
-
-**その他の言語は適宜チェックコマンドを追加すること。**
-
----
-
-### ステップ 3 — コミットしてプッシュする
-
-**push 前のバージョン更新（ユーザーが実機で反映確認に使う）:**
-ユーザーに見える挙動が変わる変更では、`index.html` フッターの `スカイコンパス vX.Y.Z` を上げる（機能追加=マイナー、バグ修正・改善=パッチ）。`sw.js` の `CACHE_VERSION` も同時に bump する。
-
-コミットメッセージは**日本語**で書く。
-
-```bash
-git add <変更ファイル>
-git commit -m "$(cat <<'EOF'
-【変更の種類】変更内容を日本語で簡潔に（#Issue番号）
-
-- 箇条書きで変更の詳細を記述
-
-Closes #Issue番号
-
-Co-Authored-By: Claude <現在のモデル> <noreply@anthropic.com>
-EOF
-)"
-git push
-```
-
-> **`Co-Authored-By` のモデル名は固定しない。** コミットを書く時点で **あなた(Claude)が実際に動作しているモデル名**に置き換える(例: `Claude Opus 4.8`)。モデル名はセッション開始時の環境情報で渡されている。
-
-コミットメッセージのプレフィックス:
-
-| プレフィックス | 用途 |
-| --- | --- |
-| `機能追加:` | 新機能の追加 |
-| `改善:` | 既存機能の改善 |
-| `バグ修正:` | 不具合の修正 |
-| `リファクタリング:` | 動作変更なしのコード整理 |
-| `設定:` | 設定・環境ファイルの変更 |
-| `ドキュメント:` | README・コメント等の更新 |
-| `テスト:` | テストの追加・修正 |
-
----
-
-### ステップ 4 — Issue をクローズする
-
-push 後に Issue を closed にする。
-
-```bash
-gh issue close <Issue番号> \
-  --repo satouisao37/sky-compass \
-  --comment "実装完了。コミット: $(git rev-parse --short HEAD)"
-```
-
----
-
-## コーディング規約
-
-- コメントは**日本語**で記載する
-- 既存のコードスタイル・命名規則に合わせる
-- 1つのコミットに複数の無関係な変更を混ぜない
-
----
-
-## 禁止事項
-
-- `git push --force`
-- 構文チェックなしでのコミット
-- Issue を作成せずに作業を開始すること
-
----
+- UI のローカル確認は `python3 -m http.server`、実 UI 挙動は headless Chrome + CDP で検証(→ 固有 knowhow / spec.md §6 のリンク先)。センサー系は最終的に実機フィードバックで確定。
 
 ## Obsidian Vault 連携
 
@@ -131,7 +30,7 @@ gh issue close <Issue番号> \
 @/Users/soshi/dev/vault/Tools/sky-compass/spec.md
 
 ### ツール固有ノウハウフォルダ
-作業中に過去のノウハウを参照したくなったら `Glob`/`Read`:
+過去のノウハウを参照したくなったら `Glob`/`Read`:
 - `/Users/soshi/dev/vault/Tools/sky-compass/knowhow/`
 
-(共通ノウハウ・ユーザー好み・キャプチャルールは親 `/Users/soshi/dev/CLAUDE.md` で既に読み込み済み)
+(共通ノウハウ・ユーザー好み・キャプチャルール・作業フローは親 `/Users/soshi/dev/CLAUDE.md` で読み込み済み)
