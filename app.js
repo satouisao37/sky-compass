@@ -647,8 +647,8 @@
     renderedMoonCalKey = key;
 
     var selectedCell = els.moonStrip.querySelector('.moon-cell.selected');
-    if (selectedCell && selectedCell.scrollIntoView) {
-      selectedCell.scrollIntoView({ inline: 'center', block: 'nearest' });
+    if (selectedCell) {
+      els.moonStrip.scrollLeft = Math.max(0, selectedCell.offsetLeft - (els.moonStrip.clientWidth - selectedCell.clientWidth) / 2);
     }
   }
   function buildMoonCalendarCells(today, selectedIso, loc, eventByDay) {
