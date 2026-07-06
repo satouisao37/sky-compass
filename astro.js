@@ -385,6 +385,19 @@
     }
     return events;
   };
+  // 大圏に沿って方位 bearing(度・北0東90)へ distKm 進んだ地点の座標。地図の方位線(地上レイ)用。
+  Astro.destinationPoint = function (lat, lon, bearing, distKm) {
+    var R = 6371;
+    var d = distKm / R;               // 角距離(ラジアン)
+    var br = toRad(bearing);
+    var phi1 = toRad(lat);
+    var lam1 = toRad(lon);
+    var sinPhi2 = Math.sin(phi1) * Math.cos(d) + Math.cos(phi1) * Math.sin(d) * Math.cos(br);
+    var phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
+    var lam2 = lam1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(phi1), Math.cos(d) - Math.sin(phi1) * sinPhi2);
+    return { lat: toDeg(phi2), lon: ((toDeg(lam2) + 540) % 360) - 180 };
+  };
+
   Astro._test = { days: days, sunCoords: sunCoords, moonCoords: moonCoords, galacticToEquatorial: galacticToEquatorial, galacticCenterCoords: galacticCenterCoords, norm360: norm360, parseDate: isoDateParts };
 
   root.Astro = Astro;

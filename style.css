@@ -78,7 +78,19 @@ main { max-width: 620px; margin: 0 auto; }
 .map-radius-label, .map-tilt-label, .map-bearing-label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
 .map-radius-label span, .map-tilt-label span, .map-bearing-label span { flex: 0 0 28px; }
 .map-radius-label input, .map-tilt-label input, .map-bearing-label input { flex: 1 1 auto; min-width: 0; }
-.map-info { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .38); border-radius: 8px; background: rgba(15, 21, 25, .88); color: var(--text); font-size: 11px; line-height: 1.4; z-index: 5; }
+.map-rays-btn { font-size: 13px; font-weight: 600; }
+.map-rays-btn[aria-pressed="false"] { opacity: .48; }
+.map-rays-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent) inset; }
+.map-bottom { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+.map-info { padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .38); border-radius: 8px; background: rgba(15, 21, 25, .88); color: var(--text); font-size: 11px; line-height: 1.4; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 5px 9px; border: 1px solid rgba(153, 168, 176, .3); border-radius: 8px; background: rgba(15, 21, 25, .82); color: var(--text); font-size: 11px; align-self: flex-start; }
+.map-legend.hidden { display: none; }
+.map-legend .lg-item { display: inline-flex; align-items: center; gap: 5px; }
+.map-legend .lg-line { display: inline-block; width: 18px; height: 0; border-top-width: 3px; border-top-style: solid; border-radius: 2px; }
+.map-legend .lg-sun { border-top-color: var(--sun); }
+.map-legend .lg-moon { border-top-color: var(--moon); }
+.map-legend .lg-solid { border-top-color: var(--text); }
+.map-legend .lg-dashed { border-top-color: var(--text); border-top-style: dashed; }
 .horizon { fill: #111920; stroke: var(--line); stroke-width: 1.5; }
 .tick { stroke: #52616b; stroke-width: .7; }
 .tick.major { stroke: #84929a; stroke-width: 1; }

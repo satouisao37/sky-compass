@@ -133,6 +133,7 @@
           <div class="map-controls" aria-label="地図操作">
             <button id="mapZoomIn" type="button" aria-label="拡大">+</button>
             <button id="mapZoomOut" type="button" aria-label="縮小">−</button>
+            <button id="mapRaysBtn" type="button" class="map-rays-btn" aria-pressed="true" aria-label="太陽・月の方位線">レイ</button>
           </div>
           <div class="map-sliders" aria-label="天球表示の調整">
             <label class="map-radius-label" for="mapRadiusInput">
@@ -148,7 +149,15 @@
               <input id="mapBearingInput" type="range" min="-180" max="180" step="1" value="0">
             </label>
           </div>
-          <div id="mapInfo" class="map-info"></div>
+          <div class="map-bottom">
+            <div id="mapLegend" class="map-legend" aria-hidden="true">
+              <span class="lg-item"><span class="lg-line lg-sun"></span>太陽</span>
+              <span class="lg-item"><span class="lg-line lg-moon"></span>月</span>
+              <span class="lg-item"><span class="lg-line lg-solid"></span>現在</span>
+              <span class="lg-item"><span class="lg-line lg-dashed"></span>出/入</span>
+            </div>
+            <div id="mapInfo" class="map-info"></div>
+          </div>
         </div>
       </div>
       <div id="belowLabel" class="below-label"></div>
@@ -181,7 +190,7 @@
       </div>
     </details>
 
-    <p class="app-version">スカイコンパス v0.16.0</p>
+    <p class="app-version">スカイコンパス v0.17.0</p>
   </main>
 
   <script src="astro.js" defer></script>

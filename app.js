@@ -53,19 +53,22 @@
   var paths3d = null;
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
-  var mapRendered = { view: '', daily: '', marker: '' };
+  var mapRendered = { view: '', daily: '', marker: '', rays: '' };
   var map = null;
   var mapSelectedMarker = null;
   var mapSphereMarker = null;
   var mapSaveTimer = null;
   var mapInitFailed = false;
+  var RAY_KM = 200, RAY_SEG = 40; // 地上レイの長さ(km)と大圏の折線分割数
+  var mapRayInfo = { count: 0, kinds: [] }; // 直近に setData したレイの内容(検証用)
+  var RAY_SUN = '#ffd166', RAY_MOON = '#dce9f2'; // レイの色(--sun / --moon と同系。暗色ケーシングで明地図でも視認)
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRaysBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -186,6 +189,7 @@
       radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
       tilt: 0,
       bearing: 0,
+      raysOn: localStorage.getItem('mapRaysOn') !== '0',
       raf: null
     };
     try {
@@ -210,6 +214,8 @@
     els.mapRadiusInput.value = String(state.map.radius);
     els.mapTiltInput.value = String(Math.round(state.map.tilt));
     els.mapBearingInput.value = String(Math.round(state.map.bearing));
+    els.mapRaysBtn.setAttribute('aria-pressed', state.map.raysOn ? 'true' : 'false');
+    els.mapLegend.classList.toggle('hidden', !state.map.raysOn);
   }
   function validLoc(loc) {
     return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -90 && loc.lat <= 90 && loc.lon >= -180 && loc.lon <= 180;
@@ -820,6 +826,16 @@
   function bindMapEvents() {
     els.mapZoomIn.addEventListener('click', function () { ensureMap(); if (map) map.zoomIn(); });
     els.mapZoomOut.addEventListener('click', function () { ensureMap(); if (map) map.zoomOut(); });
+    els.mapRaysBtn.addEventListener('click', function () {
+      state.map.raysOn = !state.map.raysOn;
+      try { localStorage.setItem('mapRaysOn', state.map.raysOn ? '1' : '0'); } catch (e) {}
+      els.mapRaysBtn.setAttribute('aria-pressed', state.map.raysOn ? 'true' : 'false');
+      els.mapLegend.classList.toggle('hidden', !state.map.raysOn);
+      applyRayVisibility();
+      mapRendered.rays = ''; // ON 復帰時に最新データで再構築させる
+      ensureMap();
+      requestMapRender();
+    });
     els.mapRadiusInput.addEventListener('input', function () {
       state.map.radius = clampMapRadius(Number(els.mapRadiusInput.value) || 90);
       scheduleSaveMapState();
@@ -852,7 +868,19 @@
     window.addEventListener('resize', function () { if (state.mode === 'map' && map) map.resize(); });
     // CDP実動検証用
     window.__mapDebug = function () {
-      return map ? { zoom: map.getZoom(), pitch: map.getPitch(), center: map.getCenter(), loaded: map.loaded() } : null;
+      if (!map) return null;
+      var out = { zoom: map.getZoom(), pitch: map.getPitch(), center: map.getCenter(), loaded: map.loaded() };
+      try {
+        var queried = map.getLayer('sky-rays-now') ? map.querySourceFeatures('sky-rays').length : 0;
+        out.rays = {
+          hasSource: !!map.getSource('sky-rays'),
+          features: mapRayInfo.count,
+          kinds: mapRayInfo.kinds,
+          queried: queried,
+          nowVisible: map.getLayer('sky-rays-now') ? (map.getLayoutProperty('sky-rays-now', 'visibility') || 'visible') : 'none'
+        };
+      } catch (e) { out.rays = { err: String(e) }; }
+      return out;
     };
   }
   function ensureMap() {
@@ -891,6 +919,7 @@
       state.map.selected = { lat: clampLat(ev.lngLat.lat), lon: wrapLon(ev.lngLat.lng) };
       mapRendered.daily = '';
       mapRendered.marker = '';
+      mapRendered.rays = '';
       syncMapMarkers();
       scheduleSaveMapState();
       requestMapRender();
@@ -922,6 +951,8 @@
       try {
         if (map.getLayer('building-3d')) map.setLayerZoomRange('building-3d', 13, 24);
       } catch (e) {}
+      addRayLayers();
+      mapRendered.rays = '';
       requestMapRender();
     });
   }
@@ -986,6 +1017,11 @@
     var tz = -date.getTimezoneOffset();
     var p = ymd(date);
     var daily = getDaily(p, state.map.selected, tz);
+    // 地上レイ(太陽・月の方位線)を更新。selected/日時のみ依存(view 非依存)なのでパン/傾き/回転では再構築しない
+    if (state.map.raysOn && map && map.getSource && map.getSource('sky-rays')) {
+      var rayKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5)].join('|');
+      if (mapRendered.rays !== rayKey && updateMapRays(date, state.map.selected, daily)) mapRendered.rays = rayKey;
+    }
     var basis = mapSphereBasis();
     var viewKey = Math.round(state.map.tilt) + '/' + Math.round(state.map.bearing);
     if (mapRendered.view !== viewKey) renderMapSphereGrid(basis);
@@ -1007,6 +1043,72 @@
     mapRendered.view = viewKey;
     mapRendered.daily = daily.key;
     mapRendered.marker = markerKey;
+  }
+  function addRayLayers() {
+    if (!map || (map.getSource && map.getSource('sky-rays'))) return;
+    try {
+      map.addSource('sky-rays', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      var colorByBody = ['match', ['get', 'body'], 'sun', RAY_SUN, 'moon', RAY_MOON, '#ffffff'];
+      // 暗色ケーシングを下敷きにして明るい地図でもレイを縁取りで浮かせる(道路ケーシングと同手法)
+      map.addLayer({
+        id: 'sky-rays-casing', type: 'line', source: 'sky-rays',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': 'rgba(12,18,24,0.55)', 'line-width': ['match', ['get', 'kind'], 'now', 5, 4] }
+      });
+      // 出没方位は破線、現在方位は実線で区別
+      map.addLayer({
+        id: 'sky-rays-event', type: 'line', source: 'sky-rays',
+        filter: ['!=', ['get', 'kind'], 'now'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': colorByBody, 'line-width': 2.2, 'line-dasharray': [1.8, 1.6] }
+      });
+      map.addLayer({
+        id: 'sky-rays-now', type: 'line', source: 'sky-rays',
+        filter: ['==', ['get', 'kind'], 'now'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': colorByBody, 'line-width': 2.8 }
+      });
+      applyRayVisibility();
+    } catch (e) {}
+  }
+  function applyRayVisibility() {
+    if (!map) return;
+    var vis = state.map.raysOn ? 'visible' : 'none';
+    ['sky-rays-casing', 'sky-rays-event', 'sky-rays-now'].forEach(function (id) {
+      if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', vis); } catch (e) {} }
+    });
+  }
+  function rayLineCoords(loc, az) {
+    var coords = [];
+    for (var i = 0; i <= RAY_SEG; i++) {
+      var pt = Astro.destinationPoint(loc.lat, loc.lon, az, RAY_KM * i / RAY_SEG);
+      coords.push([pt.lon, pt.lat]);
+    }
+    return coords;
+  }
+  function rayFeature(loc, az, body, kind) {
+    return { type: 'Feature', properties: { body: body, kind: kind }, geometry: { type: 'LineString', coordinates: rayLineCoords(loc, az) } };
+  }
+  function buildRayFeatures(date, loc, daily) {
+    var feats = [];
+    var sun = Astro.sunPosition(date, loc.lat, loc.lon);
+    var moon = Astro.moonPosition(date, loc.lat, loc.lon);
+    if (sun.alt >= -0.833) feats.push(rayFeature(loc, sun.az, 'sun', 'now'));
+    if (moon.alt >= -0.833) feats.push(rayFeature(loc, moon.az, 'moon', 'now'));
+    var st = daily.sunTimes, mt = daily.moonTimes;
+    if (st.rise) feats.push(rayFeature(loc, Astro.sunPosition(st.rise, loc.lat, loc.lon).az, 'sun', 'rise'));
+    if (st.set) feats.push(rayFeature(loc, Astro.sunPosition(st.set, loc.lat, loc.lon).az, 'sun', 'set'));
+    if (mt.rise) feats.push(rayFeature(loc, Astro.moonPosition(mt.rise, loc.lat, loc.lon).az, 'moon', 'rise'));
+    if (mt.set) feats.push(rayFeature(loc, Astro.moonPosition(mt.set, loc.lat, loc.lon).az, 'moon', 'set'));
+    return { type: 'FeatureCollection', features: feats };
+  }
+  function updateMapRays(date, loc, daily) {
+    var src = map && map.getSource && map.getSource('sky-rays');
+    if (!src) return false;
+    var fc = buildRayFeatures(date, loc, daily);
+    src.setData(fc);
+    mapRayInfo = { count: fc.features.length, kinds: fc.features.map(function (f) { return f.properties.body + ':' + f.properties.kind; }) };
+    return true;
   }
   function mapSphereBasis() {
     // 地図の回転(bearing)に合わせて天球ドームの方位を回す。

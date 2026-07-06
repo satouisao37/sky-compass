@@ -183,6 +183,38 @@ for (var a = 0; a < anchorDates.length; a++) {
   if (im.age < 0 || im.age >= 29.6) addFailure('物理アンカー', '月齢', '[0,29.6)', im.age, '範囲外');
 }
 
+// 地上レイ用の大圏目的地座標
+function haversineKm(lat1, lon1, lat2, lon2) {
+  var R = 6371, r = Math.PI / 180;
+  var dphi = (lat2 - lat1) * r, dlam = (lon2 - lon1) * r;
+  var h = Math.sin(dphi / 2) * Math.sin(dphi / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dlam / 2) * Math.sin(dlam / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+var degKm = 6371 * Math.PI / 180; // 1度あたりの大圏距離
+var dpNorth = Astro.destinationPoint(0, 0, 0, degKm);
+checkNear('目的地座標', '真北1度 緯度', dpNorth.lat, 1, 0.0005, '度');
+checkNear('目的地座標', '真北1度 経度', dpNorth.lon, 0, 0.0005, '度');
+var dpEast = Astro.destinationPoint(0, 0, 90, degKm);
+checkNear('目的地座標', '真東1度 緯度', dpEast.lat, 0, 0.0005, '度');
+checkNear('目的地座標', '真東1度 経度', dpEast.lon, 1, 0.0005, '度');
+var dpZero = Astro.destinationPoint(35.6812, 139.7671, 123, 0);
+checkNear('目的地座標', '距離0 緯度', dpZero.lat, 35.6812, 1e-6, '度');
+checkNear('目的地座標', '距離0 経度', dpZero.lon, 139.7671, 1e-6, '度');
+var dpWrap = Astro.destinationPoint(0, 179.5, 90, degKm); // 日付変更線を東へ跨ぐ
+if (dpWrap.lon < -180 || dpWrap.lon > 180) addFailure('目的地座標', '経度ラップ', '[-180,180]', dpWrap.lon.toFixed(3), '範囲外');
+checkNear('目的地座標', '経度ラップ 値', dpWrap.lon, -179.5, 0.0005, '度');
+var dpOrigins = [[35.6812, 139.7671], [0, 0], [-33.9, 18.4], [64.1, -21.9]];
+var dpBearings = [0, 37, 90, 143, 180, 268];
+for (var oi = 0; oi < dpOrigins.length; oi++) {
+  for (var bi = 0; bi < dpBearings.length; bi++) {
+    [10, 100, 500].forEach(function (dist) {
+      var o = dpOrigins[oi], b = dpBearings[bi];
+      var dp = Astro.destinationPoint(o[0], o[1], b, dist);
+      checkNear('目的地座標', '距離復元 ' + o[0] + '/' + b + '/' + dist, haversineKm(o[0], o[1], dp.lat, dp.lon), dist, 0.02, 'km');
+    });
+  }
+}
+
 if (failures.length) {
   for (var f = 0; f < failures.length; f++) console.log(failures[f]);
   $.exit(1);
