@@ -357,6 +357,34 @@
       phaseAngle: norm360(toDeg(angle))
     };
   };
+  function moonElong(date) {
+    return norm360(moonCoords(date).lon - sunCoords(date).lon);
+  }
+  Astro.moonPhases = function (fromMs, toMs, stepHours) {
+    var step = (stepHours || 6) * 3600000;
+    var sinAt = function (t) { return Math.sin(toRad(moonElong(new Date(t)))); };
+    var events = [];
+    var prevT = fromMs;
+    var prev = sinAt(prevT);
+    for (var t = fromMs + step; t <= toMs; t += step) {
+      var cur = sinAt(t);
+      if ((prev < 0 && cur >= 0) || (prev >= 0 && cur < 0)) {
+        var a = prevT;
+        var b = t;
+        for (var i = 0; i < 40; i++) {
+          var mid = (a + b) / 2;
+          var mv = sinAt(mid);
+          if ((mv < 0) === (prev < 0)) a = mid;
+          else b = mid;
+        }
+        var when = new Date((a + b) / 2);
+        events.push({ type: Math.cos(toRad(moonElong(when))) >= 0 ? 'new' : 'full', date: when });
+      }
+      prevT = t;
+      prev = cur;
+    }
+    return events;
+  };
   Astro._test = { days: days, sunCoords: sunCoords, moonCoords: moonCoords, galacticToEquatorial: galacticToEquatorial, galacticCenterCoords: galacticCenterCoords, norm360: norm360, parseDate: isoDateParts };
 
   root.Astro = Astro;

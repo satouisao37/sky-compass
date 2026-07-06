@@ -127,8 +127,25 @@ main { max-width: 620px; margin: 0 auto; }
 
 .cards { display: grid; grid-template-columns: 1fr; gap: 10px; margin: 16px 0; }
 .cards article, .time-panel, .settings { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.cards article { min-width: 0; }
 .cards h2 { margin: 0 0 8px; font-size: 14px; color: var(--accent); }
 .cards p { margin: 5px 0; line-height: 1.45; }
+.moon-strip { display: flex; gap: 6px; min-width: 0; max-width: 100%; overflow-x: auto; padding: 4px 0 8px; -webkit-overflow-scrolling: touch; }
+.moon-cell { flex: 0 0 auto; width: 56px; display: grid; justify-items: center; gap: 3px; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; background: #0f1519; color: var(--text); }
+.moon-cell.selected { border-color: var(--accent); }
+.moon-cell.phase-new, .moon-cell.phase-full { border-color: rgba(108, 198, 184, .5); box-shadow: inset 0 2px 0 var(--accent); }
+.mc-date { font-size: 10px; line-height: 1.1; text-align: center; color: var(--muted); }
+.mc-date.sat { color: #7db4e0; }
+.mc-date.sun { color: #e08a8a; }
+.mc-glyph { width: 22px; height: 22px; }
+.mc-disc { fill: var(--moon); stroke: #a9bcc8; stroke-width: .5; }
+.mc-shadow { fill: #202a32; }
+.mc-age, .mc-illum { font-size: 10px; line-height: 1.1; color: var(--text); }
+.mc-rs { font-size: 8px; line-height: 1.15; text-align: center; color: var(--muted); }
+.mc-badge { font-size: 9px; font-weight: 700; line-height: 1.2; padding: 0 4px; border-radius: 4px; }
+.moon-cell.phase-new .mc-badge { color: var(--muted); }
+.moon-cell.phase-full .mc-badge { color: var(--moon); }
+.moon-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .time-panel { margin-top: 8px; margin-bottom: 0; }
 .date-controls { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; }
