@@ -76,12 +76,13 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','moonDist','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','moonDist','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','nightToggle','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
     var hashHasLoc = restoreFromHash();
     initMapState();
+    applyNightMode(localStorage.getItem('nightRed') === '1');
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
     els.lonInput.value = state.loc.lon.toFixed(4);
@@ -109,6 +110,7 @@
     els.nowBtn.addEventListener('click', function () { state.manual = false; state.selectedDate = new Date(); setDateInput(state.selectedDate); setSliderFromDate(state.selectedDate); render(); });
     els.dateInput.addEventListener('change', function () { state.manual = true; applyDateAndSlider(); });
     els.timeSlider.addEventListener('input', function () { state.manual = true; applyDateAndSlider(); });
+    els.nightToggle.addEventListener('change', function () { setNightMode(els.nightToggle.checked); });
     els.declinationInput.addEventListener('change', function () { state.declination = Number(els.declinationInput.value || 0); localStorage.setItem('declination', String(state.declination)); render(); });
     els.applyLocBtn.addEventListener('click', function () {
       var lat = Number(els.latInput.value);
@@ -181,6 +183,16 @@
     setTimeout(function () {
       els.shareBtn.textContent = '共有';
     }, 1500);
+  }
+  function setNightMode(on) {
+    try { localStorage.setItem('nightRed', on ? '1' : '0'); } catch (e) {}
+    applyNightMode(on);
+  }
+  function applyNightMode(on) {
+    document.body.classList.toggle('night', on);
+    els.nightToggle.checked = on;
+    var theme = document.querySelector('meta[name="theme-color"]');
+    if (theme) theme.setAttribute('content', on ? '#2a0a0a' : '#101418');
   }
   // コンパス盤の横フリックで表示モードを前後に切り替える
   var MODE_ORDER = ['2d', '3d', 'sphere', 'map'];

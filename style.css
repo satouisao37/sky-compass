@@ -21,6 +21,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
 body { padding: env(safe-area-inset-top) 14px env(safe-area-inset-bottom); }
+body.night { filter: grayscale(1) sepia(1) saturate(3.2) hue-rotate(-28deg) brightness(0.72) contrast(1.05); }
 button, input, select { font: inherit; }
 button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 9px 12px; }
 button:active { transform: translateY(1px); }
