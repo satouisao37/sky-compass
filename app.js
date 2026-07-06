@@ -1003,6 +1003,13 @@
           nowVisible: map.getLayer('sky-rays-now') ? (map.getLayoutProperty('sky-rays-now', 'visibility') || 'visible') : 'none'
         };
       } catch (e) { out.rays = { err: String(e) }; }
+      try {
+        out.target = {
+          hasTarget: !!state.map.target,
+          markerAdded: mapTargetMarkerAdded,
+          queried: map.getLayer('sky-target-line') ? map.querySourceFeatures('sky-target').length : 0
+        };
+      } catch (e2) { out.target = { err: String(e2) }; }
       return out;
     };
   }
@@ -1138,11 +1145,12 @@
     mapSelectedMarker.setLngLat(lngLat);
     mapSphereMarker.setLngLat(lngLat);
     if (mapTargetMarker && state.map.target) {
+      // addTo 前に必ず setLngLat する(MapLibre は addTo 時に _update で lngLat を読むため、未設定だと undefined.lng で throw)
+      mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
       if (!mapTargetMarkerAdded) {
         mapTargetMarker.addTo(map);
         mapTargetMarkerAdded = true;
       }
-      mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
     }
   }
   function requestMapRender() {
@@ -1303,11 +1311,12 @@
   function updateMapTarget() {
     if (mapTargetMarker) {
       if (state.map.target) {
+        // addTo 前に必ず setLngLat(未設定の addTo は MapLibre 内で undefined.lng を読んで throw)
+        mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
         if (!mapTargetMarkerAdded) {
           mapTargetMarker.addTo(map);
           mapTargetMarkerAdded = true;
         }
-        mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
       } else if (mapTargetMarkerAdded) {
         mapTargetMarker.remove();
         mapTargetMarkerAdded = false;
