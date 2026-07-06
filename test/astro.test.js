@@ -215,6 +215,62 @@ for (var oi = 0; oi < dpOrigins.length; oi++) {
   }
 }
 
+checkNear('初期方位', '(0,0)→(0,1)', Astro.initialBearing(0, 0, 0, 1), 90, 0.001, '度');
+checkNear('初期方位', '(0,0)→(1,0)', Astro.initialBearing(0, 0, 1, 0), 0, 0.001, '度');
+checkNear('初期方位', '(0,0)→(0,-1)', Astro.initialBearing(0, 0, 0, -1), 270, 0.001, '度');
+checkNear('初期方位', '(0,0)→(-1,0)', Astro.initialBearing(0, 0, -1, 0), 180, 0.001, '度');
+
+var eqSunRise = Astro.alignmentSearch(0, 0, 90, {
+  body: 'sun',
+  start: { y: 2026, m: 1, d: 1 },
+  days: 366,
+  tzOffsetMin: 0,
+  tolerance: 1.0,
+  events: ['rise']
+});
+if (eqSunRise.length !== 2) addFailure('アライメント検索', '赤道真東日の出 件数', '2', String(eqSunRise.length), '不一致');
+var hasSpring = false, hasAutumn = false;
+for (var ar = 0; ar < eqSunRise.length; ar++) {
+  var r = eqSunRise[ar];
+  if (Math.abs(r.delta) > 1.0) addFailure('アライメント検索', '日の出delta', '<=1.0', r.delta.toFixed(3), '範囲外');
+  if (Math.abs(angleDiff(r.az, 90)) > 1.0) addFailure('アライメント検索', '日の出方位', '90±1.0', r.az.toFixed(3), '範囲外');
+  if (r.date.getUTCFullYear() !== 2026) addFailure('アライメント検索', '日の出年', '2026', String(r.date.getUTCFullYear()), '範囲外');
+  if (ar > 0 && eqSunRise[ar - 1].date.getTime() > r.date.getTime()) addFailure('アライメント検索', '日付昇順', '昇順', '逆順', '不一致');
+  var mm = r.date.getUTCMonth() + 1;
+  var dd = r.date.getUTCDate();
+  if (mm === 3 && dd >= 10 && dd <= 31) hasSpring = true;
+  if (mm === 9 && dd >= 15 && dd <= 30) hasAutumn = true;
+}
+if (!hasSpring) addFailure('アライメント検索', '春分付近', '3月中旬〜下旬', 'なし', '不一致');
+if (!hasAutumn) addFailure('アライメント検索', '秋分付近', '9月下旬', 'なし', '不一致');
+
+var eqSunSetEast = Astro.alignmentSearch(0, 0, 90, {
+  body: 'sun',
+  start: { y: 2026, m: 1, d: 1 },
+  days: 366,
+  tzOffsetMin: 0,
+  tolerance: 1.0,
+  events: ['set']
+});
+if (eqSunSetEast.length !== 0) addFailure('アライメント検索', '真東日の入り反例', '0', String(eqSunSetEast.length), '不一致');
+
+var moonAlign = Astro.alignmentSearch(35.6812, 139.7671, 110, {
+  body: 'moon',
+  start: { y: 2026, m: 1, d: 1 },
+  days: 90,
+  tzOffsetMin: 540,
+  tolerance: 1.0,
+  events: ['rise', 'set']
+});
+for (var ma = 0; ma < moonAlign.length; ma++) {
+  var mr = moonAlign[ma];
+  if (mr.fraction < 0 || mr.fraction > 1) addFailure('アライメント検索', '月 輝面比', '[0,1]', mr.fraction.toFixed(3), '範囲外');
+  if (mr.age < 0 || mr.age >= 29.6) addFailure('アライメント検索', '月 月齢', '[0,29.6)', mr.age.toFixed(3), '範囲外');
+  if (mr.date.getTime() < Date.UTC(2025, 11, 31, 15) || mr.date.getTime() >= Date.UTC(2026, 2, 31, 15)) {
+    addFailure('アライメント検索', '月 日付範囲', '2026/1/1から90日', mr.date.toISOString(), '範囲外');
+  }
+}
+
 if (failures.length) {
   for (var f = 0; f < failures.length; f++) console.log(failures[f]);
   $.exit(1);

@@ -23,6 +23,11 @@
       raf: null
     },
     map: loadMapState(),
+    align: {
+      body: 'sun',
+      lastKey: '',
+      searching: false
+    },
     favorites: loadFavorites(),
     compassOn: false,
     orientation: {
@@ -54,22 +59,24 @@
   var paths3d = null;
   var sphereStatic = buildSphereStatic();
   var sphereRendered = { view: '', daily: '', marker: '' };
-  var mapRendered = { view: '', daily: '', marker: '', rays: '' };
+  var mapRendered = { view: '', daily: '', marker: '', rays: '', target: '' };
   var map = null;
   var mapSelectedMarker = null;
   var mapSphereMarker = null;
+  var mapTargetMarker = null;
+  var mapTargetMarkerAdded = false;
   var mapSaveTimer = null;
   var mapInitFailed = false;
   var RAY_KM = 200, RAY_SEG = 40; // 地上レイの長さ(km)と大圏の折線分割数
   var mapRayInfo = { count: 0, kinds: [] }; // 直近に setData したレイの内容(検証用)
-  var RAY_SUN = '#ffd166', RAY_MOON = '#dce9f2'; // レイの色(--sun / --moon と同系。暗色ケーシングで明地図でも視認)
+  var RAY_SUN = '#ffd166', RAY_MOON = '#dce9f2', TARGET_CORAL = '#ff6b6b'; // レイの色(--sun / --moon)と目標色
   var fov3dHalf = 50 * Math.PI / 180; // 3Dかざしの可視円半径に対応する視線からの角度(全視野100°)
   var dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -252,9 +259,11 @@
     if (jumpMap) {
       state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
       state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+      state.align.lastKey = '';
       mapRendered.daily = '';
       mapRendered.marker = '';
       mapRendered.rays = '';
+      mapRendered.target = '';
       if (map) {
         syncMapMarkers();
         map.jumpTo({ center: [state.map.center.lon, state.map.center.lat] });
@@ -268,11 +277,13 @@
     var out = {
       center: { lat: fallback.lat, lon: fallback.lon },
       selected: { lat: fallback.lat, lon: fallback.lon },
+      target: null,
       zoom: 12,
       radius: Number(localStorage.getItem('mapSphereRadius') || '90'),
       tilt: 0,
       bearing: 0,
       raysOn: localStorage.getItem('mapRaysOn') !== '0',
+      targetMode: false,
       raf: null
     };
     try {
@@ -280,6 +291,8 @@
       if (saved) {
         if (saved.center && validLoc(saved.center)) out.center = { lat: saved.center.lat, lon: saved.center.lon };
         if (saved.selected && validLoc(saved.selected)) out.selected = { lat: saved.selected.lat, lon: saved.selected.lon };
+        if (saved.target === null) out.target = null;
+        else if (saved.target && validLoc(saved.target)) out.target = { lat: saved.target.lat, lon: saved.target.lon };
         if (isFinite(saved.zoom)) out.zoom = clampMapZoom(saved.zoom);
         if (isFinite(saved.tilt)) out.tilt = clampMapTilt(saved.tilt);
         if (isFinite(saved.bearing)) out.bearing = clampMapBearing(saved.bearing);
@@ -298,7 +311,9 @@
     els.mapTiltInput.value = String(Math.round(state.map.tilt));
     els.mapBearingInput.value = String(Math.round(state.map.bearing));
     els.mapRaysBtn.setAttribute('aria-pressed', state.map.raysOn ? 'true' : 'false');
+    els.mapTargetBtn.setAttribute('aria-pressed', state.map.targetMode ? 'true' : 'false');
     els.mapLegend.classList.toggle('hidden', !state.map.raysOn);
+    renderAlignmentPanel();
   }
   function validLoc(loc) {
     return loc && isFinite(loc.lat) && isFinite(loc.lon) && loc.lat >= -90 && loc.lat <= 90 && loc.lon >= -180 && loc.lon <= 180;
@@ -309,6 +324,7 @@
       localStorage.setItem('mapView', JSON.stringify({
         center: sanitizeLoc(state.map.center, Tokyo, true),
         selected: sanitizeLoc(state.map.selected, state.map.center, true),
+        target: state.map.target && validLoc(state.map.target) ? sanitizeLoc(state.map.target, state.map.selected, true) : null,
         zoom: state.map.zoom,
         tilt: state.map.tilt,
         bearing: state.map.bearing
@@ -334,8 +350,11 @@
     mapRendered.daily = '';
     mapRendered.marker = '';
     mapRendered.view = '';
+    mapRendered.target = '';
+    state.align.lastKey = '';
     syncMapCamera();
     syncMapMarkers();
+    updateMapTarget();
   }
   function locate(fromTap) {
     if (!navigator.geolocation) {
@@ -565,6 +584,7 @@
     els.sunTimes.textContent = '出 ' + fmtTime(st.rise) + ' / 南中 ' + fmtTime(st.transit) + ' / 入 ' + fmtTime(st.set);
     els.moonTimes.textContent = '出 ' + fmtTime(mt.rise) + ' / 南中 ' + fmtTime(mt.transit) + ' / 入 ' + fmtTime(mt.set);
     drawGalaxyCard(date, loc, daily);
+    renderAlignmentPanel();
     // 略語をやめ時系列順に明記(朝=ブルー→ゴールデン、夕=ゴールデン→ブルー)。時刻は数値のみのため innerHTML でも安全
     els.lightTimes.innerHTML = '朝　ブルーアワー ' + fmtRange(st.blueAM) + '／ゴールデンアワー ' + fmtRange(st.goldenAM) + '<br>' +
       '夕　ゴールデンアワー ' + fmtRange(st.goldenPM) + '／ブルーアワー ' + fmtRange(st.bluePM) + '<br>' +
@@ -926,6 +946,19 @@
       ensureMap();
       requestMapRender();
     });
+    els.mapTargetBtn.addEventListener('click', function () {
+      state.map.targetMode = !state.map.targetMode;
+      els.mapTargetBtn.setAttribute('aria-pressed', state.map.targetMode ? 'true' : 'false');
+      ensureMap();
+    });
+    els.alignClearBtn.addEventListener('click', function () {
+      clearMapTarget();
+    });
+    els.alignSunBtn.addEventListener('click', function () { setAlignBody('sun'); });
+    els.alignMoonBtn.addEventListener('click', function () { setAlignBody('moon'); });
+    els.alignDaysSelect.addEventListener('change', resetAlignmentResults);
+    els.alignToleranceSelect.addEventListener('change', resetAlignmentResults);
+    els.alignSearchBtn.addEventListener('click', function () { startAlignmentSearch(); });
     els.mapRadiusInput.addEventListener('input', function () {
       state.map.radius = clampMapRadius(Number(els.mapRadiusInput.value) || 90);
       scheduleSaveMapState();
@@ -970,6 +1003,13 @@
           nowVisible: map.getLayer('sky-rays-now') ? (map.getLayoutProperty('sky-rays-now', 'visibility') || 'visible') : 'none'
         };
       } catch (e) { out.rays = { err: String(e) }; }
+      try {
+        out.target = {
+          hasTarget: !!state.map.target,
+          markerAdded: mapTargetMarkerAdded,
+          queried: map.getLayer('sky-target-line') ? map.querySourceFeatures('sky-target').length : 0
+        };
+      } catch (e2) { out.target = { err: String(e2) }; }
       return out;
     };
   }
@@ -1004,13 +1044,32 @@
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     mapSelectedMarker = makeViewportMarker(els.mapMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
+    mapTargetMarker = makeViewportMarker(els.mapTargetMarker);
+    mapTargetMarkerAdded = false;
+    if (state.map.target) {
+      mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]).addTo(map);
+      mapTargetMarkerAdded = true;
+    }
     mapSphereMarker = makeViewportMarker(els.mapSphereMarker).setLngLat([state.map.selected.lon, state.map.selected.lat]).addTo(map);
     map.on('click', function (ev) {
-      state.map.selected = { lat: clampLat(ev.lngLat.lat), lon: wrapLon(ev.lngLat.lng) };
-      mapRendered.daily = '';
-      mapRendered.marker = '';
-      mapRendered.rays = '';
+      var pt = { lat: clampLat(ev.lngLat.lat), lon: wrapLon(ev.lngLat.lng) };
+      if (state.map.targetMode) {
+        state.map.target = pt;
+        state.map.targetMode = false;
+        els.mapTargetBtn.setAttribute('aria-pressed', 'false');
+        state.align.lastKey = '';
+        mapRendered.target = '';
+      } else {
+        state.map.selected = pt;
+        state.align.lastKey = '';
+        mapRendered.daily = '';
+        mapRendered.marker = '';
+        mapRendered.rays = '';
+        mapRendered.target = '';
+      }
       syncMapMarkers();
+      updateMapTarget();
+      renderAlignmentPanel();
       scheduleSaveMapState();
       requestMapRender();
     });
@@ -1042,7 +1101,9 @@
         if (map.getLayer('building-3d')) map.setLayerZoomRange('building-3d', 13, 24);
       } catch (e) {}
       addRayLayers();
+      addTargetLayer();
       mapRendered.rays = '';
+      mapRendered.target = '';
       requestMapRender();
     });
   }
@@ -1083,6 +1144,14 @@
     var lngLat = [state.map.selected.lon, state.map.selected.lat];
     mapSelectedMarker.setLngLat(lngLat);
     mapSphereMarker.setLngLat(lngLat);
+    if (mapTargetMarker && state.map.target) {
+      // addTo 前に必ず setLngLat する(MapLibre は addTo 時に _update で lngLat を読むため、未設定だと undefined.lng で throw)
+      mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
+      if (!mapTargetMarkerAdded) {
+        mapTargetMarker.addTo(map);
+        mapTargetMarkerAdded = true;
+      }
+    }
   }
   function requestMapRender() {
     if (state.mode !== 'map' || state.map.raf) return;
@@ -1111,6 +1180,15 @@
     if (state.map.raysOn && map && map.getSource && map.getSource('sky-rays')) {
       var rayKey = [date.getTime(), state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5)].join('|');
       if (mapRendered.rays !== rayKey && updateMapRays(date, state.map.selected, daily)) mapRendered.rays = rayKey;
+    }
+    if (map && map.getSource && map.getSource('sky-target')) {
+      var targetKey = state.map.target ? [
+        state.map.selected.lat.toFixed(5),
+        state.map.selected.lon.toFixed(5),
+        state.map.target.lat.toFixed(5),
+        state.map.target.lon.toFixed(5)
+      ].join('|') : 'none';
+      if (mapRendered.target !== targetKey && updateMapTarget()) mapRendered.target = targetKey;
     }
     var basis = mapSphereBasis();
     var viewKey = Math.round(state.map.tilt) + '/' + Math.round(state.map.bearing);
@@ -1199,6 +1277,181 @@
     src.setData(fc);
     mapRayInfo = { count: fc.features.length, kinds: fc.features.map(function (f) { return f.properties.body + ':' + f.properties.kind; }) };
     return true;
+  }
+  function addTargetLayer() {
+    if (!map || (map.getSource && map.getSource('sky-target'))) return;
+    try {
+      map.addSource('sky-target', { type: 'geojson', data: emptyFeatureCollection() });
+      map.addLayer({
+        id: 'sky-target-casing', type: 'line', source: 'sky-target',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': 'rgba(12,18,24,0.72)', 'line-width': 5 }
+      });
+      map.addLayer({
+        id: 'sky-target-line', type: 'line', source: 'sky-target',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': TARGET_CORAL, 'line-width': 2.6, 'line-dasharray': [2, 1.4] }
+      });
+    } catch (e) {}
+  }
+  function emptyFeatureCollection() {
+    return { type: 'FeatureCollection', features: [] };
+  }
+  function targetLineCoords(selected, target) {
+    var dist = distanceKm(selected.lat, selected.lon, target.lat, target.lon);
+    var bearing = Astro.initialBearing(selected.lat, selected.lon, target.lat, target.lon);
+    var seg = Math.max(2, Math.min(64, Math.ceil(dist / 5)));
+    var coords = [];
+    for (var i = 0; i <= seg; i++) {
+      var pt = Astro.destinationPoint(selected.lat, selected.lon, bearing, dist * i / seg);
+      coords.push([pt.lon, pt.lat]);
+    }
+    return coords;
+  }
+  function updateMapTarget() {
+    if (mapTargetMarker) {
+      if (state.map.target) {
+        // addTo 前に必ず setLngLat(未設定の addTo は MapLibre 内で undefined.lng を読んで throw)
+        mapTargetMarker.setLngLat([state.map.target.lon, state.map.target.lat]);
+        if (!mapTargetMarkerAdded) {
+          mapTargetMarker.addTo(map);
+          mapTargetMarkerAdded = true;
+        }
+      } else if (mapTargetMarkerAdded) {
+        mapTargetMarker.remove();
+        mapTargetMarkerAdded = false;
+      }
+    }
+    var src = map && map.getSource && map.getSource('sky-target');
+    if (!src) return false;
+    if (!state.map.target) {
+      src.setData(emptyFeatureCollection());
+      return true;
+    }
+    src.setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: { kind: 'target' },
+        geometry: { type: 'LineString', coordinates: targetLineCoords(state.map.selected, state.map.target) }
+      }]
+    });
+    return true;
+  }
+  function clearMapTarget() {
+    state.map.target = null;
+    state.align.lastKey = '';
+    mapRendered.target = '';
+    updateMapTarget();
+    renderAlignmentPanel();
+    scheduleSaveMapState();
+    requestMapRender();
+  }
+  function targetInfo() {
+    if (!state.map.target) return null;
+    return {
+      az: Astro.initialBearing(state.map.selected.lat, state.map.selected.lon, state.map.target.lat, state.map.target.lon),
+      dist: distanceKm(state.map.selected.lat, state.map.selected.lon, state.map.target.lat, state.map.target.lon)
+    };
+  }
+  function setAlignBody(body) {
+    state.align.body = body === 'moon' ? 'moon' : 'sun';
+    state.align.lastKey = '';
+    renderAlignmentPanel();
+  }
+  function resetAlignmentResults() {
+    state.align.lastKey = '';
+    renderAlignmentPanel();
+  }
+  function renderAlignmentPanel() {
+    if (!els.alignResults) return;
+    var info = targetInfo();
+    els.alignSunBtn.setAttribute('aria-pressed', state.align.body === 'sun' ? 'true' : 'false');
+    els.alignMoonBtn.setAttribute('aria-pressed', state.align.body === 'moon' ? 'true' : 'false');
+    els.alignClearBtn.disabled = !info;
+    els.alignSearchBtn.disabled = !info || state.align.searching;
+    if (!info) {
+      els.alignTargetStatus.textContent = '地図モードで「目標」をタップして山頂などを指定してください';
+      renderAlignmentMessage('目標が未設定です');
+      return;
+    }
+    els.alignTargetStatus.textContent = '目標: 方位 ' + degDir(info.az) + ' / 約 ' + fmtKm(info.dist);
+    if (!state.align.lastKey && !state.align.searching) renderAlignmentMessage('条件を選んで検索してください');
+  }
+  function renderAlignmentMessage(text) {
+    els.alignResults.textContent = '';
+    var li = document.createElement('li');
+    li.className = 'align-empty';
+    li.textContent = text;
+    els.alignResults.appendChild(li);
+  }
+  function startAlignmentSearch() {
+    if (!state.map.target || state.align.searching) return;
+    state.align.searching = true;
+    renderAlignmentMessage('検索中…');
+    els.alignSearchBtn.disabled = true;
+    requestAnimationFrame(function () {
+      var info = targetInfo();
+      if (!info) {
+        state.align.searching = false;
+        renderAlignmentPanel();
+        return;
+      }
+      var start = ymd(state.selectedDate);
+      var opts = {
+        body: state.align.body,
+        start: start,
+        days: Number(els.alignDaysSelect.value) || 366,
+        tzOffsetMin: -state.selectedDate.getTimezoneOffset(),
+        tolerance: Number(els.alignToleranceSelect.value) || 0.5,
+        events: ['rise', 'set']
+      };
+      var results = Astro.alignmentSearch(state.map.selected.lat, state.map.selected.lon, info.az, opts);
+      state.align.searching = false;
+      state.align.lastKey = [
+        state.align.body,
+        opts.days,
+        opts.tolerance,
+        start.y, start.m, start.d,
+        state.map.selected.lat.toFixed(5), state.map.selected.lon.toFixed(5),
+        state.map.target.lat.toFixed(5), state.map.target.lon.toFixed(5)
+      ].join('|');
+      renderAlignmentResults(results);
+      renderAlignmentPanel();
+    });
+  }
+  function renderAlignmentResults(results) {
+    els.alignResults.textContent = '';
+    if (!results.length) {
+      renderAlignmentMessage('一致する出没は見つかりませんでした');
+      return;
+    }
+    results.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'align-result-item';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'align-result ' + (state.align.body === 'moon' ? 'moon' : 'sun');
+      btn.addEventListener('click', function () {
+        state.manual = true;
+        state.selectedDate = new Date(item.date.getTime());
+        setDateInput(state.selectedDate);
+        setSliderFromDate(state.selectedDate);
+        render();
+      });
+      var main = document.createElement('span');
+      main.className = 'align-result-main';
+      main.textContent = fmtMDWeek(item.date) + ' ' + eventLabel(item.event) + ' ' + fmtTime(item.date);
+      var sub = document.createElement('span');
+      sub.className = 'align-result-sub';
+      var delta = (item.delta >= 0 ? '+' : '') + item.delta.toFixed(1) + '度';
+      sub.textContent = '方位 ' + Math.round(item.az) + '度(' + delta + ')' +
+        (state.align.body === 'moon' ? ' ・ 輝面 ' + Math.round(item.fraction * 100) + '% / 月齢 ' + item.age.toFixed(1) : '');
+      btn.appendChild(main);
+      btn.appendChild(sub);
+      li.appendChild(btn);
+      els.alignResults.appendChild(li);
+    });
   }
   function mapSphereBasis() {
     // 地図の回転(bearing)に合わせて天球ドームの方位を回す。
@@ -1885,6 +2138,26 @@
   function degDir(az) { return Math.round(az) + '度 ' + dirs[Math.round(az / 22.5) % 16]; }
   function fmtFull(date) { return date.getFullYear() + '/' + pad(date.getMonth() + 1) + '/' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()); }
   function fmtTime(date) { return date ? pad(date.getHours()) + ':' + pad(date.getMinutes()) : '--:--'; }
+  function fmtMDWeek(date) {
+    var w = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+    return (date.getMonth() + 1) + '/' + date.getDate() + '(' + w + ')';
+  }
+  function fmtKm(km) {
+    return (km < 10 ? km.toFixed(1) : Math.round(km)) + ' km';
+  }
+  function eventLabel(event) {
+    return event === 'set' ? '入' : '出';
+  }
+  function distanceKm(lat1, lon1, lat2, lon2) {
+    var R = 6371;
+    var dphi = (lat2 - lat1) * Math.PI / 180;
+    var dlam = (lon2 - lon1) * Math.PI / 180;
+    var phi1 = lat1 * Math.PI / 180;
+    var phi2 = lat2 * Math.PI / 180;
+    var h = Math.sin(dphi / 2) * Math.sin(dphi / 2) +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlam / 2) * Math.sin(dlam / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
   function fmtRange(r) { return fmtTime(r.start) + '-' + fmtTime(r.end); }
   function fmtStarWindow(sw) {
     if (!sw || !sw.windows || !sw.windows.length) {

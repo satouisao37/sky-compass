@@ -385,6 +385,79 @@
     }
     return events;
   };
+  Astro.initialBearing = function (lat1, lon1, lat2, lon2) {
+    var phi1 = toRad(lat1);
+    var phi2 = toRad(lat2);
+    var dlam = toRad(lon2 - lon1);
+    var y = Math.sin(dlam) * Math.cos(phi2);
+    var x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dlam);
+    return norm360(toDeg(Math.atan2(y, x)));
+  };
+  function angleDiff(a, b) {
+    return (a - b + 540) % 360 - 180;
+  }
+  function flushAlignmentCluster(cluster, out) {
+    if (!cluster.length) return;
+    var best = cluster[0];
+    for (var i = 1; i < cluster.length; i++) {
+      if (Math.abs(cluster[i].delta) < Math.abs(best.delta)) best = cluster[i];
+    }
+    out.push(best.item);
+    cluster.length = 0;
+  }
+  function localDatePartsFromStart(start, offsetDays) {
+    var t = Date.UTC(start.y, start.m - 1, start.d + offsetDays);
+    var dt = new Date(t);
+    return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+  }
+  Astro.alignmentSearch = function (lat, lon, targetAz, opts) {
+    opts = opts || {};
+    if (!opts.start) return [];
+    var body = opts.body === 'moon' ? 'moon' : 'sun';
+    var daysCount = isFinite(opts.days) ? Math.max(0, Math.floor(opts.days)) : 366;
+    var tzOffsetMin = isFinite(opts.tzOffsetMin) ? opts.tzOffsetMin : 0;
+    var tolerance = isFinite(opts.tolerance) ? Math.max(0, opts.tolerance) : 0.6;
+    var events = Array.isArray(opts.events) && opts.events.length ? opts.events : ['rise', 'set'];
+    var results = [];
+    var posFn = body === 'moon' ? Astro.moonPosition : Astro.sunPosition;
+    var timesFn = body === 'moon' ? Astro.moonTimes : Astro.sunTimes;
+    targetAz = norm360(targetAz);
+
+    for (var eidx = 0; eidx < events.length; eidx++) {
+      var event = events[eidx] === 'set' ? 'set' : 'rise';
+      var cluster = [];
+      var prevIdx = -2;
+      for (var i = 0; i < daysCount; i++) {
+        var p = localDatePartsFromStart(opts.start, i);
+        var times = timesFn(p.y, p.m, p.d, lat, lon, tzOffsetMin);
+        var date = times[event];
+        if (!date) {
+          flushAlignmentCluster(cluster, results);
+          prevIdx = -2;
+          continue;
+        }
+        var pos = posFn(date, lat, lon);
+        var delta = angleDiff(pos.az, targetAz);
+        if (Math.abs(delta) <= tolerance) {
+          if (i !== prevIdx + 1) flushAlignmentCluster(cluster, results);
+          var item = { date: date, event: event, az: pos.az, delta: delta };
+          if (body === 'moon') {
+            var illum = Astro.moonIllumination(date);
+            item.fraction = illum.fraction;
+            item.age = illum.age;
+          }
+          cluster.push({ i: i, delta: delta, item: item });
+          prevIdx = i;
+        } else {
+          flushAlignmentCluster(cluster, results);
+          prevIdx = -2;
+        }
+      }
+      flushAlignmentCluster(cluster, results);
+    }
+    results.sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
+    return results;
+  };
   // 大圏に沿って方位 bearing(度・北0東90)へ distKm 進んだ地点の座標。地図の方位線(地上レイ)用。
   Astro.destinationPoint = function (lat, lon, bearing, distKm) {
     var R = 6371;
