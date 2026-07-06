@@ -28,6 +28,8 @@
       lastKey: '',
       searching: false
     },
+    geo: { key: '', name: '' },
+    geoEnabled: localStorage.getItem('geoName') !== '0',
     favorites: loadFavorites(),
     compassOn: false,
     orientation: {
@@ -45,6 +47,8 @@
   var els = {};
   var dailyCache = {};
   var sky3dCache = {};
+  var geoCache = {};
+  var geoTimer = null;
   var renderedPathKey = '';
   var renderedTimelineKey = '';
   var renderedMoonCalKey = '';
@@ -76,13 +80,14 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','moonDist','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','nightToggle','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','moonDist','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','nightToggle','geoToggle','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
     var hashHasLoc = restoreFromHash();
     initMapState();
     applyNightMode(localStorage.getItem('nightRed') === '1');
+    els.geoToggle.checked = state.geoEnabled;
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
     els.lonInput.value = state.loc.lon.toFixed(4);
@@ -111,6 +116,7 @@
     els.dateInput.addEventListener('change', function () { state.manual = true; applyDateAndSlider(); });
     els.timeSlider.addEventListener('input', function () { state.manual = true; applyDateAndSlider(); });
     els.nightToggle.addEventListener('change', function () { setNightMode(els.nightToggle.checked); });
+    els.geoToggle.addEventListener('change', function () { setGeoEnabled(els.geoToggle.checked); });
     els.declinationInput.addEventListener('change', function () { state.declination = Number(els.declinationInput.value || 0); localStorage.setItem('declination', String(state.declination)); render(); });
     els.applyLocBtn.addEventListener('click', function () {
       var lat = Number(els.latInput.value);
@@ -640,7 +646,8 @@
     var mt = daily.moonTimes;
     var sw = daily.starWindow;
     els.dateLabel.textContent = fmtFull(date);
-    els.placeLabel.textContent = loc.lat.toFixed(4) + ', ' + loc.lon.toFixed(4) + (loc.acc ? '  精度約' + Math.round(loc.acc) + 'm' : '');
+    updatePlaceLabel();
+    requestReverseGeocode(loc);
     els.timeLabel.textContent = pad(date.getHours()) + ':' + pad(date.getMinutes());
     els.sunNow.textContent = '方位 ' + degDir(sun.az) + ' / 高度 ' + sun.alt.toFixed(1) + '度';
     els.moonNow.textContent = '方位 ' + degDir(moon.az) + ' / 高度 ' + moon.alt.toFixed(1) + '度 / 月齢 ' + illum.age.toFixed(1) + ' / 輝面比 ' + Math.round(illum.fraction * 100) + '%';
@@ -674,6 +681,67 @@
   function renderCompassRotation() {
     var rot = state.compassOn ? -displayHeading() : 0;
     els.rotatingSky.setAttribute('transform', 'rotate(' + rot.toFixed(1) + ')');
+  }
+  function updatePlaceLabel() {
+    var loc = state.loc;
+    var key = geoKey(loc);
+    var name = state.geoEnabled && state.geo.key === key && state.geo.name ? state.geo.name + '  ' : '';
+    els.placeLabel.textContent = name + loc.lat.toFixed(4) + ', ' + loc.lon.toFixed(4) + (loc.acc ? '  精度約' + Math.round(loc.acc) + 'm' : '');
+  }
+  function setGeoEnabled(on) {
+    state.geoEnabled = on;
+    try { localStorage.setItem('geoName', on ? '1' : '0'); } catch (e) {}
+    if (on) {
+      requestReverseGeocode(state.loc);
+    } else {
+      state.geo = { key: '', name: '' };
+      if (geoTimer) {
+        clearTimeout(geoTimer);
+        geoTimer = null;
+      }
+      render();
+    }
+  }
+  function geoKey(loc) {
+    return loc.lat.toFixed(2) + ',' + loc.lon.toFixed(2);
+  }
+  function requestReverseGeocode(loc) {
+    if (!state.geoEnabled) return;
+    var key = geoKey(loc);
+    if (key === state.geo.key) return;
+    if (geoCache[key]) {
+      state.geo = { key: key, name: geoCache[key] };
+      updatePlaceLabel();
+      return;
+    }
+    if (geoTimer) clearTimeout(geoTimer);
+    geoTimer = setTimeout(function () {
+      geoTimer = null;
+      state.geo = { key: key, name: '' };
+      // ブラウザでは User-Agent を設定できない。GitHub Pages などの Referer は通常の fetch として自動送出される。
+      fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&accept-language=ja&lat=' +
+        encodeURIComponent(loc.lat) + '&lon=' + encodeURIComponent(loc.lon))
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (!data) return;
+          var name = shortGeoName(data);
+          if (!name) return;
+          geoCache[key] = name;
+          state.geo = { key: key, name: name };
+          updatePlaceLabel();
+        })
+        .catch(function () {});
+    }, 600);
+  }
+  function shortGeoName(data) {
+    var addr = data.address || {};
+    var place = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.suburb || addr.neighbourhood;
+    var region = addr.state || addr.province || addr.prefecture;
+    if (place && region && place !== region) return place + ', ' + region;
+    if (place || region) return place || region;
+    return String(data.display_name || '').split(',').slice(0, 3).map(function (part) {
+      return part.trim();
+    }).filter(Boolean).join(', ');
   }
   function moonDistanceLabel(moon) {
     var dist = Math.round(moon.dist);
