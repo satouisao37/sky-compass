@@ -76,7 +76,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','moonDist','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -634,6 +634,7 @@
     els.moonNow.textContent = '方位 ' + degDir(moon.az) + ' / 高度 ' + moon.alt.toFixed(1) + '度 / 月齢 ' + illum.age.toFixed(1) + ' / 輝面比 ' + Math.round(illum.fraction * 100) + '%';
     els.sunTimes.textContent = '出 ' + fmtTime(st.rise) + ' / 南中 ' + fmtTime(st.transit) + ' / 入 ' + fmtTime(st.set);
     els.moonTimes.textContent = '出 ' + fmtTime(mt.rise) + ' / 南中 ' + fmtTime(mt.transit) + ' / 入 ' + fmtTime(mt.set);
+    els.moonDist.textContent = moonDistanceLabel(moon);
     drawGalaxyCard(date, loc, daily);
     renderAlignmentPanel();
     // 略語をやめ時系列順に明記(朝=ブルー→ゴールデン、夕=ゴールデン→ブルー)。時刻は数値のみのため innerHTML でも安全
@@ -661,6 +662,12 @@
   function renderCompassRotation() {
     var rot = state.compassOn ? -displayHeading() : 0;
     els.rotatingSky.setAttribute('transform', 'rotate(' + rot.toFixed(1) + ')');
+  }
+  function moonDistanceLabel(moon) {
+    var dist = Math.round(moon.dist);
+    var apparent = 2 * Math.asin(1737.4 / moon.dist) * 180 / Math.PI * 60;
+    var tag = dist <= 360000 ? ' (近地点寄り・大きい)' : (dist >= 400000 ? ' (遠地点寄り・小さい)' : '');
+    return '距離 ' + dist.toLocaleString('ja-JP') + ' km / 視直径 ' + apparent.toFixed(1) + '′' + tag;
   }
   function renderTimeline(daily, p, loc, date) {
     if (renderedTimelineKey !== daily.key) {
