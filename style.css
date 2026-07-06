@@ -190,6 +190,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .settings p { margin: 8px 0 0; font-size: 12px; }
 .manual-loc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .manual-loc button { grid-column: 1 / -1; }
+.favorites { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.fav-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+.fav-save { display: flex; gap: 8px; margin-top: 10px; }
+.fav-save input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 9px 10px; }
+.fav-save button { flex: 0 0 auto; white-space: nowrap; }
+.fav-hint { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.fav-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fav-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+.fav-item { display: flex; gap: 6px; }
+.fav-apply { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-del { flex: 0 0 auto; width: 40px; padding: 9px 0; color: var(--muted); font-size: 18px; line-height: 1; }
+.fav-del:active { color: var(--text); }
 
 @media (min-width: 560px) {
   body { padding-left: 22px; padding-right: 22px; }

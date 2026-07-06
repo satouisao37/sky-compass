@@ -23,6 +23,7 @@
       raf: null
     },
     map: loadMapState(),
+    favorites: loadFavorites(),
     compassOn: false,
     orientation: {
       alpha: null,
@@ -68,7 +69,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRaysBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRaysBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -76,6 +77,7 @@
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
     els.lonInput.value = state.loc.lon.toFixed(4);
+    renderFavorites();
     bindEvents();
     setDateInput(state.selectedDate);
     setSliderFromDate(state.selectedDate);
@@ -102,15 +104,14 @@
     els.applyLocBtn.addEventListener('click', function () {
       var lat = Number(els.latInput.value);
       var lon = Number(els.lonInput.value);
-      state.loc = {
-        lat: isFinite(lat) ? clampLat(lat) : state.loc.lat,
-        lon: isFinite(lon) ? clampLon(lon) : state.loc.lon,
-        acc: null
-      };
-      els.latInput.value = state.loc.lat.toFixed(4);
-      els.lonInput.value = state.loc.lon.toFixed(4);
-      saveLoc(state.loc);
-      render();
+      applyLocation({
+        lat: isFinite(lat) ? lat : state.loc.lat,
+        lon: isFinite(lon) ? lon : state.loc.lon
+      }, false);
+    });
+    els.favSaveBtn.addEventListener('click', addFavorite);
+    els.favNameInput.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); addFavorite(); }
     });
     els.compassBtn.addEventListener('click', toggleCompass);
     els.mode2dBtn.addEventListener('click', function () { setMode('2d'); });
@@ -179,6 +180,88 @@
     try {
       localStorage.setItem('lastLocation', JSON.stringify(loc));
     } catch (e) {}
+  }
+  function loadFavorites() {
+    try {
+      var arr = JSON.parse(localStorage.getItem('favorites') || '[]');
+      if (Array.isArray(arr)) {
+        return arr.filter(function (f) { return f && isFinite(f.lat) && isFinite(f.lon); }).slice(0, 30).map(function (f) {
+          return { id: f.id || genFavId(), name: String(f.name || '').slice(0, 20) || '無名', lat: clampLat(f.lat), lon: clampLon(f.lon) };
+        });
+      }
+    } catch (e) {}
+    return [];
+  }
+  function saveFavorites() {
+    try { localStorage.setItem('favorites', JSON.stringify(state.favorites)); } catch (e) {}
+  }
+  function genFavId() { return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function addFavorite() {
+    // 地図モードは選択地点、他モードは現在地(state.loc)を保存対象にする
+    var src = (state.mode === 'map') ? state.map.selected : state.loc;
+    var pt = { lat: clampLat(src.lat), lon: clampLon(src.lon) };
+    var name = (els.favNameInput.value || '').trim().slice(0, 20) || (pt.lat.toFixed(3) + ', ' + pt.lon.toFixed(3));
+    state.favorites.push({ id: genFavId(), name: name, lat: pt.lat, lon: pt.lon });
+    if (state.favorites.length > 30) state.favorites = state.favorites.slice(-30); // 上限で古いものから捨てる
+    saveFavorites();
+    els.favNameInput.value = '';
+    renderFavorites();
+  }
+  function removeFavorite(id) {
+    state.favorites = state.favorites.filter(function (f) { return f.id !== id; });
+    saveFavorites();
+    renderFavorites();
+  }
+  function renderFavorites() {
+    var ul = els.favList;
+    if (!ul) return;
+    ul.textContent = '';
+    if (!state.favorites.length) {
+      var empty = document.createElement('li');
+      empty.className = 'fav-empty';
+      empty.textContent = '保存した地点はまだありません';
+      ul.appendChild(empty);
+      return;
+    }
+    state.favorites.forEach(function (fav) {
+      var li = document.createElement('li');
+      li.className = 'fav-item';
+      var apply = document.createElement('button');
+      apply.type = 'button';
+      apply.className = 'fav-apply';
+      apply.textContent = fav.name;
+      apply.title = fav.lat.toFixed(4) + ', ' + fav.lon.toFixed(4);
+      apply.addEventListener('click', function () { applyLocation({ lat: fav.lat, lon: fav.lon }, true); });
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'fav-del';
+      del.setAttribute('aria-label', fav.name + ' を削除');
+      del.textContent = '×';
+      del.addEventListener('click', function () { removeFavorite(fav.id); });
+      li.appendChild(apply);
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
+  }
+  // 地点の適用を一元化: state.loc 更新・入力反映・保存・(任意で)地図ジャンプ・再描画
+  function applyLocation(loc, jumpMap) {
+    state.loc = { lat: clampLat(loc.lat), lon: clampLon(loc.lon), acc: null };
+    els.latInput.value = state.loc.lat.toFixed(4);
+    els.lonInput.value = state.loc.lon.toFixed(4);
+    saveLoc(state.loc);
+    if (jumpMap) {
+      state.map.center = { lat: state.loc.lat, lon: state.loc.lon };
+      state.map.selected = { lat: state.loc.lat, lon: state.loc.lon };
+      mapRendered.daily = '';
+      mapRendered.marker = '';
+      mapRendered.rays = '';
+      if (map) {
+        syncMapMarkers();
+        map.jumpTo({ center: [state.map.center.lon, state.map.center.lat] });
+      }
+      scheduleSaveMapState();
+    }
+    render();
   }
   function loadMapState() {
     var fallback = { lat: Tokyo.lat, lon: Tokyo.lon };
