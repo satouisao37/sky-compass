@@ -26,6 +26,7 @@ button { border: 1px solid var(--line); background: var(--panel-2); color: var(-
 button:active { transform: translateY(1px); }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 8px; }
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
 .date-label { margin: 0; font-size: 18px; font-weight: 700; }
 .place-label { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 main { max-width: 620px; margin: 0 auto; }

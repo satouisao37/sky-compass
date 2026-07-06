@@ -76,10 +76,11 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','shareBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapTargetMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapLocateBtn','mapRaysBtn','mapTargetBtn','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','mapLegend','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','alignTargetStatus','alignClearBtn','alignSunBtn','alignMoonBtn','alignDaysSelect','alignToleranceSelect','alignSearchBtn','alignResults','declinationInput','latInput','lonInput','applyLocBtn','favNameInput','favSaveBtn','favList'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
+    var hashHasLoc = restoreFromHash();
     initMapState();
     els.declinationInput.value = state.declination;
     els.latInput.value = state.loc.lat.toFixed(4);
@@ -89,7 +90,7 @@
     setDateInput(state.selectedDate);
     setSliderFromDate(state.selectedDate);
     render();
-    locate(false);
+    if (!hashHasLoc) locate(false);
     setInterval(function () {
       if (!state.manual) {
         state.selectedDate = new Date();
@@ -102,6 +103,7 @@
   }
   function bindEvents() {
     els.locateBtn.addEventListener('click', function () { locate(true); });
+    els.shareBtn.addEventListener('click', shareCurrentView);
     els.prevDay.addEventListener('click', function () { shiftDay(-1); });
     els.nextDay.addEventListener('click', function () { shiftDay(1); });
     els.nowBtn.addEventListener('click', function () { state.manual = false; state.selectedDate = new Date(); setDateInput(state.selectedDate); setSliderFromDate(state.selectedDate); render(); });
@@ -130,6 +132,55 @@
     bindModeSwipe();
     bindTimeline();
     bindMoonCalendar();
+  }
+  function restoreFromHash() {
+    if (!location.hash || location.hash.length < 2) return false;
+    var params = new URLSearchParams(location.hash.slice(1));
+    var lat = Number(params.get('lat'));
+    var lon = Number(params.get('lon'));
+    var hasLoc = isFinite(lat) && isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+    if (hasLoc) {
+      state.loc = { lat: clampLat(lat), lon: clampLon(lon), acc: null };
+      saveLoc(state.loc);
+    }
+    var hashDate = parseHashDate(params.get('d'), params.get('t'));
+    if (hashDate) {
+      state.selectedDate = hashDate;
+      state.manual = true;
+    }
+    return hasLoc;
+  }
+  function parseHashDate(day, time) {
+    var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+    var t = /^(\d{2}):(\d{2})$/.exec(time || '');
+    if (!d || !t) return null;
+    var y = Number(d[1]), m = Number(d[2]), date = Number(d[3]);
+    var h = Number(t[1]), min = Number(t[2]);
+    if (h > 23 || min > 59) return null;
+    var out = new Date(y, m - 1, date, h, min, 0);
+    if (out.getFullYear() !== y || out.getMonth() !== m - 1 || out.getDate() !== date) return null;
+    return out;
+  }
+  function shareCurrentView() {
+    var loc = state.loc;
+    var date = state.selectedDate;
+    var hash = '#lat=' + loc.lat.toFixed(4) + '&lon=' + loc.lon.toFixed(4) +
+      '&d=' + isoDay(date) + '&t=' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+    var url = location.origin + location.pathname + hash;
+    var done = function () { flashShareDone(); };
+    if (navigator.share) {
+      navigator.share({ title: 'スカイコンパス', url: url }).then(done).catch(function () {});
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done).catch(function () {});
+    }
+  }
+  function flashShareDone() {
+    els.shareBtn.textContent = 'コピーしました';
+    setTimeout(function () {
+      els.shareBtn.textContent = '共有';
+    }, 1500);
   }
   // コンパス盤の横フリックで表示モードを前後に切り替える
   var MODE_ORDER = ['2d', '3d', 'sphere', 'map'];
