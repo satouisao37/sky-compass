@@ -21,7 +21,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
 body { padding: env(safe-area-inset-top) 14px env(safe-area-inset-bottom); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 9px 12px; }
 button:active { transform: translateY(1px); }
 
@@ -62,9 +62,13 @@ main { max-width: 620px; margin: 0 auto; }
 .map-view { position: absolute; inset: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #d8ddd9; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .map-view.hidden { display: none; }
 .map-canvas { position: absolute; inset: 0; }
-#mapView > .map-marker, #mapView > .map-sphere-marker { display: none; }
+#mapView > .map-marker, #mapView > .map-target-marker, #mapView > .map-sphere-marker { display: none; }
 /* Marker は毎フレーム transform されるため合成レイヤに昇格させる(Safari の再ラスタライズによるカクつき対策) */
 .map-marker { width: 12px; height: 12px; border: 2px solid #101418; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; will-change: transform; }
+.map-target-marker { position: relative; width: 16px; height: 16px; border: 2px solid #101418; border-radius: 50%; background: #ff6b6b; box-shadow: 0 0 0 2px rgba(237, 244, 247, .9), 0 2px 8px rgba(0, 0, 0, .45); pointer-events: none; will-change: transform; }
+.map-target-marker::before, .map-target-marker::after { content: ""; position: absolute; left: 50%; top: 50%; background: #101418; transform: translate(-50%, -50%); }
+.map-target-marker::before { width: 10px; height: 2px; }
+.map-target-marker::after { width: 2px; height: 10px; }
 .map-sphere-marker { display: block; pointer-events: none; will-change: transform; }
 /* will-change でコンポジット層になった SVG は WebKit で border-radius クリップが効かず背景が四角くなる。clip-path で円形を強制する(box-shadow は clip-path で切られるため使わず、縁は .sphere-rim ストロークで担保) */
 .map-sphere { display: block; overflow: visible; border-radius: 50%; clip-path: circle(50%); -webkit-clip-path: circle(50%); background: rgba(17, 25, 32, .48); pointer-events: none; transform-origin: 50% 50%; will-change: transform; }
@@ -79,8 +83,10 @@ main { max-width: 620px; margin: 0 auto; }
 .map-radius-label span, .map-tilt-label span, .map-bearing-label span { flex: 0 0 28px; }
 .map-radius-label input, .map-tilt-label input, .map-bearing-label input { flex: 1 1 auto; min-width: 0; }
 .map-rays-btn { font-size: 13px; font-weight: 600; }
-.map-rays-btn[aria-pressed="false"] { opacity: .48; }
+.map-target-btn { font-size: 12px; font-weight: 600; color: #ffb3b3; }
+.map-rays-btn[aria-pressed="false"], .map-target-btn[aria-pressed="false"] { opacity: .48; }
 .map-rays-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent) inset; }
+.map-target-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px #ff6b6b inset; opacity: 1; }
 .map-bottom { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
 .map-info { padding: 6px 9px; border: 1px solid rgba(153, 168, 176, .38); border-radius: 8px; background: rgba(15, 21, 25, .88); color: var(--text); font-size: 11px; line-height: 1.4; }
 .map-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 5px 9px; border: 1px solid rgba(153, 168, 176, .3); border-radius: 8px; background: rgba(15, 21, 25, .82); color: var(--text); font-size: 11px; align-self: flex-start; }
@@ -138,7 +144,7 @@ main { max-width: 620px; margin: 0 auto; }
 .app-version { text-align: center; color: var(--muted); font-size: 11px; margin: 14px 0 24px; }
 
 .cards { display: grid; grid-template-columns: 1fr; gap: 10px; margin: 16px 0; }
-.cards article, .time-panel, .settings { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.cards article, .time-panel, .align, .settings { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .cards article { min-width: 0; }
 .cards h2 { margin: 0 0 8px; font-size: 14px; color: var(--accent); }
 .cards p { margin: 5px 0; line-height: 1.45; }
@@ -184,8 +190,26 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .timeline-event:disabled { color: var(--muted); opacity: .52; transform: none; }
 .timeline-event:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.align { margin: 0 0 12px; color: var(--muted); }
+.align summary, .settings summary { color: var(--text); cursor: pointer; font-weight: 700; }
+.align-target-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin-top: 12px; }
+.align-target-status { margin: 0; color: var(--text); font-size: 13px; line-height: 1.45; border-left: 4px solid #ff6b6b; padding-left: 8px; }
+.align-controls { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+.align-controls label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+.align-controls select { width: 100%; min-width: 0; color: var(--text); background: #0f1519; border: 1px solid var(--line); border-radius: 7px; padding: 8px; }
+.align-segment { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #0f1519; }
+.align-segment button { border: 0; background: transparent; color: var(--muted); border-radius: 6px; padding: 8px 10px; }
+.align-segment button[aria-pressed="true"] { background: var(--panel-2); color: var(--text); }
+.align-results { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.align-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+.align-result { width: 100%; display: grid; gap: 4px; text-align: left; padding: 9px 10px; border-radius: 8px; background: #0f1519; }
+.align-result.sun { border-left: 4px solid var(--sun); }
+.align-result.moon { border-left: 4px solid var(--moon); }
+.align-result-main { color: var(--text); font-weight: 700; font-size: 13px; }
+.align-result-sub { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.align-result:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .settings { margin-bottom: 18px; color: var(--muted); }
-.settings summary { color: var(--text); cursor: pointer; font-weight: 700; }
 .settings label { display: block; margin-top: 12px; }
 .settings p { margin: 8px 0 0; font-size: 12px; }
 .manual-loc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -207,4 +231,5 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   body { padding-left: 22px; padding-right: 22px; }
   .cards { grid-template-columns: 1fr 1fr; }
   .cards article:nth-child(n+3) { grid-column: 1 / -1; }
+  .align-controls { grid-template-columns: 1fr 1fr 1fr auto; align-items: end; }
 }
