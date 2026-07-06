@@ -41,6 +41,7 @@
   var sky3dCache = {};
   var renderedPathKey = '';
   var renderedTimelineKey = '';
+  var renderedMoonCalKey = '';
   var orientationListening = false;
   var headingOutliers = 0;
   var headingAnchorOff = 0;
@@ -64,7 +65,7 @@
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
+    ['dateLabel','placeLabel','locateBtn','mode2dBtn','mode3dBtn','modeSphereBtn','modeMapBtn','skySvg','sky3d','sky3dRef','sky3dPaths','sun3d','moon3d','sunGuide','moonGuide','sky3dStatus','sphereSvg','sphereGround','sphereGridBack','spherePathsBack','sphereGridFront','spherePathsFront','sphereGalaxy','sphereMarkers','sphereLabels','mapView','mapCanvas','mapMarker','mapSphereMarker','mapSphereSvg','mapSphereGround','mapSphereGridBack','mapSpherePathsBack','mapSphereGridFront','mapSpherePathsFront','mapSphereGalaxy','mapSphereMarkers','mapSphereLabels','mapZoomIn','mapZoomOut','mapRadiusInput','mapTiltInput','mapBearingInput','mapInfo','rotatingSky','ticks','sunPath','moonPath','galaxy2d','sunMarker','moonMarker','belowLabel','compassBtn','compassStatus','sunNow','sunTimes','moonNow','moonTimes','lightTimes','galaxyNow','galaxyTimes','moonPhaseNext','moonStrip','prevDay','nextDay','nowBtn','dateInput','timeSlider','timeLabel','timelineBar','twilightGrad','tlMoon','tlGB','tlHours','tlSun','tlNow','tlNowHandle','timelineAxis','timelineEvents','declinationInput','latInput','lonInput','applyLocBtn'].forEach(function (id) { els[id] = document.getElementById(id); });
     drawTicks();
     buildRef3d();
     build3dPaths();
@@ -117,6 +118,7 @@
     bindMapEvents();
     bindModeSwipe();
     bindTimeline();
+    bindMoonCalendar();
   }
   // コンパス盤の横フリックで表示モードを前後に切り替える
   var MODE_ORDER = ['2d', '3d', 'sphere', 'map'];
@@ -401,6 +403,11 @@
     state.manual = true;
     applyDateAndSlider();
   }
+  function jumpToDay(iso) {
+    state.manual = true;
+    els.dateInput.value = iso;
+    applyDateAndSlider();
+  }
   function bindTimeline() {
     if (!els.timelineBar) return;
     var pointerId = null;
@@ -432,6 +439,14 @@
       var btn = ev.target.closest('button[data-min]');
       if (!btn || btn.disabled) return;
       jumpToMinutes(Number(btn.getAttribute('data-min')));
+    });
+  }
+  function bindMoonCalendar() {
+    if (!els.moonStrip) return;
+    els.moonStrip.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button[data-date]');
+      if (!btn) return;
+      jumpToDay(btn.getAttribute('data-date'));
     });
   }
   function shiftDay(delta) {
@@ -471,6 +486,7 @@
       renderedPathKey = daily.key;
     }
     renderTimeline(daily, p, loc, date);
+    drawMoonCalendar(loc);
     drawGalaxy2d(date, loc);
     drawBody(els.sunMarker, sun, 'sun', illum);
     drawBody(els.moonMarker, moon, 'moon', illum);
@@ -608,6 +624,84 @@
   }
   function minuteOf(date) {
     return date ? date.getHours() * 60 + date.getMinutes() : null;
+  }
+  function drawMoonCalendar(loc) {
+    var today = startOfDay(new Date());
+    var selected = state.selectedDate;
+    var selectedIso = isoDay(selected);
+    var key = isoDay(today) + '|' + selectedIso + '|' + loc.lat.toFixed(4) + ',' + loc.lon.toFixed(4);
+    if (renderedMoonCalKey === key) return;
+
+    var stripStart = today.getTime();
+    var nextEvents = Astro.moonPhases(stripStart, stripStart + 40 * 86400000, 6);
+    var nextNew = firstMoonPhase(nextEvents, 'new');
+    var nextFull = firstMoonPhase(nextEvents, 'full');
+    els.moonPhaseNext.textContent = '次の新月 ' + fmtPhaseEvent(nextNew) + ' ・ 次の満月 ' + fmtPhaseEvent(nextFull);
+
+    var dayEvents = Astro.moonPhases(stripStart, stripStart + 28 * 86400000, 6);
+    var eventByDay = {};
+    dayEvents.forEach(function (event) {
+      eventByDay[isoDay(event.date)] = event;
+    });
+    els.moonStrip.innerHTML = buildMoonCalendarCells(today, selectedIso, loc, eventByDay);
+    renderedMoonCalKey = key;
+
+    var selectedCell = els.moonStrip.querySelector('.moon-cell.selected');
+    if (selectedCell && selectedCell.scrollIntoView) {
+      selectedCell.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+  }
+  function buildMoonCalendarCells(today, selectedIso, loc, eventByDay) {
+    var weekdays = ['日','月','火','水','木','金','土'];
+    var html = '';
+    for (var i = 0; i < 28; i++) {
+      var day = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+      var p = ymd(day);
+      var iso = isoDay(day);
+      var tz = -day.getTimezoneOffset();
+      var noon = new Date(p.y, p.m - 1, p.d, 12, 0, 0);
+      var illum = Astro.moonIllumination(noon);
+      var mt = Astro.moonTimes(p.y, p.m, p.d, loc.lat, loc.lon, tz);
+      var event = eventByDay[iso];
+      var phaseClass = event ? ' phase-' + event.type : '';
+      var selectedClass = iso === selectedIso ? ' selected' : '';
+      var wd = weekdays[day.getDay()];
+      var wdClass = day.getDay() === 0 ? ' sun' : (day.getDay() === 6 ? ' sat' : '');
+      html += '<button class="moon-cell' + selectedClass + phaseClass + '" type="button" data-date="' + iso + '">' +
+        '<span class="mc-date' + wdClass + '">' + p.m + '/' + p.d + '<br>(' + wd + ')</span>' +
+        '<svg class="mc-glyph" viewBox="-9 -9 18 18" aria-hidden="true">' + moonGlyphSvg(illum.fraction, illum.age) + '</svg>' +
+        '<span class="mc-age">月齢' + illum.age.toFixed(1) + '</span>' +
+        '<span class="mc-illum">' + Math.round(illum.fraction * 100) + '%</span>' +
+        '<span class="mc-rs">↑' + fmtTime(mt.rise) + '<br>↓' + fmtTime(mt.set) + '</span>' +
+        (event ? '<span class="mc-badge">' + (event.type === 'new' ? '新' : '満') + '</span>' : '') +
+        '</button>';
+    }
+    return html;
+  }
+  function moonGlyphSvg(fraction, age) {
+    var r = 7;
+    var s = r / 5.2;
+    var g = moonShadowGeom(fraction, age, 0);
+    return '<circle class="mc-disc" cx="0" cy="0" r="' + r + '"/>' +
+      '<ellipse class="mc-shadow" cx="' + (g.x * s).toFixed(1) + '" cy="0" rx="' + (g.rx * s).toFixed(1) + '" ry="' + r + '"/>';
+  }
+  function firstMoonPhase(events, type) {
+    for (var i = 0; i < events.length; i++) {
+      if (events[i].type === type) return events[i];
+    }
+    return null;
+  }
+  function fmtPhaseEvent(event) {
+    return event ? fmtMD(event.date) + ' ' + fmtTime(event.date) : '--';
+  }
+  function fmtMD(date) {
+    return (date.getMonth() + 1) + '/' + date.getDate();
+  }
+  function startOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+  function isoDay(date) {
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
   }
   function drawTicks() {
     var html = '';

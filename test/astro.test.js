@@ -62,6 +62,10 @@ function toDeg(rad) { return rad * 180 / Math.PI; }
 function angleDiff(a, b) {
   return (a - b + 540) % 360 - 180;
 }
+function parseUtcMinute(s) {
+  var p = s.split(/[-T:]/);
+  return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(p[3]), Number(p[4]));
+}
 
 var gcEq = Astro._test.galacticToEquatorial(0, 0);
 checkNear('銀河座標変換', '銀河中心 RA', Astro._test.norm360(toDeg(gcEq.ra)), 266.40, 0.2, '度');
@@ -146,6 +150,22 @@ var gcPlane = Astro.galacticCenterPosition(planeDate, 35.6812, 139.7671);
 checkNear('銀河面大円', 'l=0 高度', plane[0].alt, gcPlane.alt, 0.6, '度');
 if (Math.abs(angleDiff(plane[0].az, gcPlane.az)) > 0.6) {
   addFailure('銀河面大円', 'l=0 方位', gcPlane.az.toFixed(3), plane[0].az.toFixed(3), Math.abs(angleDiff(plane[0].az, gcPlane.az)).toFixed(3) + '度');
+}
+
+var phaseWindow = expected.moonPhases.windowUtc;
+var phases = Astro.moonPhases(parseUtcMinute(phaseWindow[0]), parseUtcMinute(phaseWindow[1]), 6);
+for (var mp = 0; mp < expected.moonPhases.events.length; mp++) {
+  var ref = expected.moonPhases.events[mp];
+  var refMs = parseUtcMinute(ref.utc);
+  var matched = false;
+  var bestDiff = 999999;
+  for (var pe = 0; pe < phases.length; pe++) {
+    if (phases[pe].type !== ref.type) continue;
+    var diff = Math.abs(phases[pe].date.getTime() - refMs) / 60000;
+    if (diff < bestDiff) bestDiff = diff;
+    if (diff <= 360) matched = true;
+  }
+  if (!matched) addFailure('月相', ref.type + ' ' + ref.utc, '±360分以内', bestDiff.toFixed(1) + '分', '範囲外');
 }
 
 var anchorDates = [

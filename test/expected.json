@@ -59,5 +59,13 @@
         "transitAltRange": [34.3, 35.4]
       }
     }
-  ]
+  ],
+  "moonPhases": {
+    "_note": "USNO moon phases API (aa.usno.navy.mil/api/moon/phases, UT)。低精度式のため許容±6時間",
+    "windowUtc": ["2026-07-01T00:00", "2026-08-05T00:00"],
+    "events": [
+      { "type": "new", "utc": "2026-07-14T09:43" },
+      { "type": "full", "utc": "2026-07-29T14:36" }
+    ]
+  }
 }
