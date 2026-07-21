@@ -111,8 +111,8 @@ main { max-width: 620px; margin: 0 auto; }
 .gc-marker { fill: var(--galaxy); stroke: rgba(255, 255, 255, .6); stroke-width: .5; }
 .gc-label { fill: var(--galaxy); font-size: 8px; text-anchor: middle; }
 .sun-disc { fill: var(--sun); filter: url(#softGlow); }
-.moon-disc { fill: var(--moon); stroke: #a9bcc8; stroke-width: .6; }
-.moon-shadow { fill: #303b43; opacity: .9; }
+.moon-dark { fill: #232d36; stroke: #93a5b1; stroke-width: .6; }
+.moon-lit { fill: var(--moon); }
 .below { opacity: .35; }
 /* 円内の絶対配置だと方位文字(S/W)と重なるためコンパス直下の通常フローへ。空のときは畳む */
 .below-label { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
@@ -157,9 +157,9 @@ main { max-width: 620px; margin: 0 auto; }
 .mc-date { font-size: 10px; line-height: 1.1; text-align: center; color: var(--muted); }
 .mc-date.sat { color: #7db4e0; }
 .mc-date.sun { color: #e08a8a; }
-.mc-glyph { width: 22px; height: 22px; }
-.mc-disc { fill: var(--moon); stroke: #a9bcc8; stroke-width: .5; }
-.mc-shadow { fill: #202a32; }
+.mc-glyph { width: 24px; height: 24px; }
+.mc-disc { fill: #202a32; stroke: #5f7280; stroke-width: .5; }
+.mc-lit { fill: var(--moon); }
 .mc-age, .mc-illum { font-size: 10px; line-height: 1.1; color: var(--text); }
 .mc-rs { font-size: 8px; line-height: 1.15; text-align: center; color: var(--muted); }
 .mc-badge { font-size: 9px; font-weight: 700; line-height: 1.2; padding: 0 4px; border-radius: 4px; }

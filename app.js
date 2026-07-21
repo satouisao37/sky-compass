@@ -927,10 +927,8 @@
   }
   function moonGlyphSvg(fraction, age) {
     var r = 7;
-    var s = r / 5.2;
-    var g = moonShadowGeom(fraction, age, 0);
     return '<circle class="mc-disc" cx="0" cy="0" r="' + r + '"/>' +
-      '<ellipse class="mc-shadow" cx="' + (g.x * s).toFixed(1) + '" cy="0" rx="' + (g.rx * s).toFixed(1) + '" ry="' + r + '"/>';
+      '<path class="mc-lit" d="' + moonLitPathD(fraction, age, 0, 0, r) + '"/>';
   }
   function firstMoonPhase(events, type) {
     for (var i = 0; i < events.length; i++) {
@@ -1014,15 +1012,20 @@
       el.innerHTML = '<circle class="sun-disc' + cls + '" cx="' + p.x + '" cy="' + p.y + '" r="5.4"/>';
       return;
     }
-    var shadow = moonShadowGeom(illum.fraction, illum.age, p.x);
-    el.innerHTML = '<g class="' + (pos.alt < 0 ? 'below' : '') + '"><circle class="moon-disc" cx="' + p.x + '" cy="' + p.y + '" r="5.2"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + p.y + '" rx="' + shadow.rx.toFixed(1) + '" ry="5.1"/></g>';
+    el.innerHTML = '<g class="' + (pos.alt < 0 ? 'below' : '') + '"><circle class="moon-dark" cx="' + p.x + '" cy="' + p.y + '" r="5.2"/><path class="moon-lit" d="' + moonLitPathD(illum.fraction, illum.age, p.x, p.y, 5.2) + '"/></g>';
   }
-  function moonShadowGeom(fraction, age, cx) {
-    var side = age < 14.77 ? -1 : 1;
-    return {
-      x: cx + side * Math.abs(fraction - .5) * 4,
-      rx: (1 - fraction) * 10
-    };
+  function moonLitPathD(fraction, age, cx, cy, r) {
+    // 輝面 = 外周の半円 + 明暗境界(ターミネーター)の半楕円の2弧。北半球視: 満ちる月は右側が光る
+    var waxing = age < 14.77;
+    var k = 2 * fraction - 1; // 正=凸月、負=三日月側。|k|*r がターミネーター楕円の半短径(0=半月の直線)
+    var x = cx.toFixed(2);
+    var top = (cy - r).toFixed(2);
+    var bottom = (cy + r).toFixed(2);
+    var outerSweep = waxing ? 1 : 0;
+    var termSweep = (k >= 0) === waxing ? 1 : 0;
+    return 'M' + x + ' ' + top +
+      ' A' + r + ' ' + r + ' 0 0 ' + outerSweep + ' ' + x + ' ' + bottom +
+      ' A' + (Math.abs(k) * r).toFixed(2) + ' ' + r + ' 0 0 ' + termSweep + ' ' + x + ' ' + top + ' Z';
   }
   function drawGalaxy2d(date, loc) {
     var pts = Astro.galacticPlanePoints(date, loc.lat, loc.lon, 4);
@@ -1628,8 +1631,7 @@
     }
     if (moonPos.alt >= 0) {
       var mp = sphereProject(azAltVector(moonPos.az, moonPos.alt), basis);
-      var shadow = moonShadowGeom(illum.fraction, illum.age, mp.x);
-      html += '<g class="' + (mp.front ? '' : 'sphere-back') + '"><circle class="sphere-moon-now" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><ellipse class="moon-shadow" cx="' + shadow.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" rx="' + shadow.rx.toFixed(1) + '" ry="4.7"/></g>';
+      html += '<g class="' + (mp.front ? '' : 'sphere-back') + '"><circle class="moon-dark" cx="' + mp.x.toFixed(1) + '" cy="' + mp.y.toFixed(1) + '" r="4.8"/><path class="moon-lit" d="' + moonLitPathD(illum.fraction, illum.age, mp.x, mp.y, 4.8) + '"/></g>';
     }
     els.mapSphereMarkers.innerHTML = html;
   }
