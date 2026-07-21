@@ -2117,13 +2117,13 @@
     };
   }
   // alpha 原点(iOSでは不定)と真北のずれ δ: コンパス値と行列側で同じ量の差分を取る。
-  // iOS の webkitCompassHeading は端末上端(up)の水平射影方位を返す(実測根拠: かざし帯域 β>100 で
-  // 生値が 180° 跳ぶのは up 射影の反転そのもの。forward 射影は β=90 をまたいでも連続で跳ばない)。
-  // よって基準は up 射影に置く。up 射影は β=90 で反転するがコンパス値も同時に反転するため差分 t の
-  // 中で相殺され、δ は全姿勢で一定になる。#29 の forward 基準は「コンパス値=照準(forward)の方位」
-  // という誤ったセンサーモデル仮定のシミュに基づいており、かざし姿勢でロールに比例した方位ずれ
-  // (見上げ30°でロール10°→約11.5°、見上げ60°で約19°)を生んでいた(#52。up 射影モデルでの
-  // 数値シミュは .codex-runs/verify-delta-upmodel/sim.js)。
+  // 基準軸は照準(forward)の水平射影。かざし帯域(β≈100〜150)で forward は水平成分が大きく良条件
+  // なのに対し、上端(up)の水平成分は |cosβ| で縮退し、姿勢雑音を 1/|cosβ| 倍(β=105 で約4倍)に
+  // 増幅する——#52(v0.23.1)で up 基準に変えたら δ ジッタで「かくかく」になり、#53(v0.23.2)で
+  // 差し戻した。【注意】iOS webkitCompassHeading の真の基準軸(常に上端射影か、帯域で上端→背面に
+  // 切り替わるか)は未確定。かざし帯域の生値180°跳びは両説とも予測するため判別に使えない(γ=0 で
+  // 両説の予測差がちょうど180°)。かざし姿勢でロールに比例した定常ずれが残るなら基準軸不一致
+  // (純up射影説)の疑いだが、変更する前に実機のデバッグ計測で判別すること(spec.md §6)。
   function updateDelta(ev) {
     var o = state.orientation;
     if (o.alpha === null || o.beta === null || o.gamma === null) return;
@@ -2133,11 +2133,11 @@
       o.deltaReady = true;
       return;
     }
-    var upAxis = deviceAxes(o.alpha, o.beta, o.gamma).up;
-    var horiz = Math.sqrt(upAxis.x * upAxis.x + upAxis.y * upAxis.y);
-    // 上端射影が縮退する β≈78.5〜101.5°(地平線狙い)は iOS のコンパス値自体が不安定なため更新を凍結
-    if (horiz < .2) return;
-    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(upAxis));
+    // 照準(forward)の水平射影を基準にする。forward の方位は地平線→天頂で連続(反転しない)
+    var aim = deviceAxes(o.alpha, o.beta, o.gamma).forward;
+    var horiz = Math.sqrt(aim.x * aim.x + aim.y * aim.y);
+    if (horiz < .2) return; // 照準がほぼ鉛直(天頂/真下狙い)は射影もコンパスも縮退するため更新を凍結
+    var t = norm360(ev.webkitCompassHeading + state.declination - azimuthOf(aim));
     if (!o.deltaReady) {
       // 初期化は基準軸の取り違えが起きない姿勢(直立未満: 上端射影=背面射影)に限る
       if (o.beta >= 80) return;
@@ -2146,7 +2146,8 @@
       return;
     }
     // δの連続性選択も heading と同じ分岐ロック問題を持つ(誤って t+180 側に入ると保持し続ける)。
-    // 縮退帯(β≈90)から遠く up 射影が信頼できる |β|<45 では t が真のδそのもの。
+    // 上端射影と照準 forward の方位が一致し軸の取り違えが起きない |β|<45 では t が真のδそのもの
+    // (ロールがあっても両射影の方位差は90°程度に収まり、しきい値120°を超えない)。
     // 180°側に居座り続けたときだけ矯正する(#39)
     if (Math.abs(o.beta) < 45 && Math.abs(angleDiff(t, o.delta)) > 120) {
       if (++deltaAnchorOff >= 8) {
