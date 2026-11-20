@@ -1,8 +1,8 @@
 # スカイコンパス
 
-現在地から見た太陽・月の方位/高度・出没/薄明時刻・月齢を iPhone で確認する PWA(星景・夜景の撮影計画用)。vanilla JS・ビルド無し、GitHub Pages 配信。詳細仕様は末尾の `@import`(spec.md)で読み込む。リポジトリ: `satouisao37/sky-compass`。
+現在地から見た太陽・月の方位/高度・出没/薄明時刻・月齢を iPhone で確認する PWA(星景・夜景の撮影計画用)。vanilla JS・ビルド無し、GitHub Pages 配信。詳細仕様は末尾の spec.md(着手前に Read)。リポジトリ: `satouisao37/sky-compass`。
 
-> Issue 作成 → 実装 → 日本語コミット → close の**共通フロー・コミット規約・禁止事項は親 `/Users/soshi/dev/CLAUDE.md`「全ツール共通の作業フロー」に集約**。ここには再掲せず、このツール固有の前提とコマンドだけを書く。
+> Issue 作成 → 実装 → 日本語コミット → close の**共通フロー・コミット規約・禁止事項は親 `/Users/soshi/dev/CLAUDE.md`「コードを変えるときの流れ」に集約**。ここには再掲せず、このツール固有の前提とコマンドだけを書く。
 
 ## 最重要の前提(壊さないこと)
 
@@ -25,12 +25,5 @@
 - UI のローカル確認は `python3 -m http.server`、実 UI 挙動は headless Chrome + CDP で検証(→ 固有 knowhow / spec.md §6 のリンク先)。センサー系は最終的に実機フィードバックで確定。
 
 ## Obsidian Vault 連携
-
-### 仕様ノート(必読)
-@/Users/soshi/dev/vault/Tools/sky-compass/spec.md
-
-### ツール固有ノウハウフォルダ
-過去のノウハウを参照したくなったら `Glob`/`Read`:
-- `/Users/soshi/dev/vault/Tools/sky-compass/knowhow/`
-
-(共通ノウハウ・ユーザー好み・キャプチャルール・作業フローは親 `/Users/soshi/dev/CLAUDE.md` で読み込み済み)
+- 仕様: `/Users/soshi/dev/vault/Tools/sky-compass/spec.md`(着手前に Read する。起動フォルダの外なので @import はしない)
+- 固有ノウハウ: `/Users/soshi/dev/vault/Tools/sky-compass/knowhow/`(関係しそうなら Glob → Read)
